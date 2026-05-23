@@ -30,7 +30,7 @@ chatbot system.
 
 ### Testing
 - JUnit 5
-- MockK (planned)
+- MockK
 
 ### DevOps
 - GitHub Actions (planned)
@@ -47,10 +47,12 @@ API --> PostgreSQL
 
 ## Getting Started
 
-> Unix like: <br>
-> ./gradlew bootRun <br>
->  windows: <br>
-> ./gradlew.bat bootRun
+```bash
+# Unix like:
+./gradlew bootRun
+# Windows:
+ ./gradlew.bat bootRun
+```
 
 ## Roadmap
 
@@ -66,7 +68,7 @@ API --> PostgreSQL
 - Session management
 
 ### Phase 3 — Async Processing
-- BullMQ job queue
+- RabbitMQ job queue
 - Background task processing
 - Retry / failure handling
 
@@ -83,8 +85,10 @@ API --> PostgreSQL
 
 ## Architecture Evolution
 
+```text
 Monolith MVP
 → Stateful caching
 → Async processing
 → Retrieval pipeline
 → Production observability
+```
