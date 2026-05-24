@@ -23,15 +23,18 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("com.google.genai:google-genai:1.0.0")
+    implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
+
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.mockk:mockk:1.14.9")
     testImplementation("com.ninja-squad:springmockk:5.0.1")
+
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // third-party
-    implementation("com.google.genai:google-genai:1.0.0")
+    developmentOnly("org.springframework.boot:spring-boot-devtools")
 }
 
 kotlin {
