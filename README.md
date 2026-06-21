@@ -92,3 +92,21 @@ Monolith MVP
 → Retrieval pipeline
 → Production observability
 ```
+
+
+## Setup
+
+1. Download the Tailwind CLI for your OS from:
+   https://github.com/tailwindlabs/tailwindcss/releases/latest
+
+2. Rename it and make it executable:
+```bash
+   mv tailwindcss-<your-os> tailwindcss
+   chmod +x tailwindcss   # macOS/Linux only
+```
+
+3. Run the watcher during development:
+```bash
+   ./tailwindcss -i src/main/resources/static/css/input.css \
+                 -o src/main/resources/static/css/output.css --watch
+```

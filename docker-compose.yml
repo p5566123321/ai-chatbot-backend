@@ -1,0 +1,10 @@
+
+services:
+  db:
+    image: postgres:18.4-alpine
+    restart: always
+    shm_size: 128mb
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-ai_chat}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}

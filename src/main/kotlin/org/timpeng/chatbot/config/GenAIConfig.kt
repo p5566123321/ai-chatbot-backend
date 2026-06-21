@@ -1,6 +1,7 @@
 package org.timpeng.chatbot.config
 
 import com.google.genai.Client
+import com.google.genai.Models
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -8,7 +9,8 @@ import org.springframework.context.annotation.Configuration
 class GenAIConfig {
 
     @Bean
-    fun GoogleGenAiClient(): Client {
-        return Client()
-    }
+    fun googleGenAiClient(): Client = Client()
+
+    @Bean
+    fun googleGenAiModels(client: Client): Models = client.models
 }

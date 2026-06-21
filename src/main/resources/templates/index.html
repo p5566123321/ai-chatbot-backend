@@ -1,9 +1,123 @@
 <!DOCTYPE html>
-<html>
-    <head>
-        <title>Hello, World!</title>
-    </head>
-    <body>
-        Hello, World!
-    </body>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chatbot</title>
+    <link rel="stylesheet" th:href="@{/css/output.css}">
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-100 flex justify-center items-center h-screen font-sans">
+
+<div class="w-full max-w-md h-[80vh] bg-white rounded-xl shadow-xl flex flex-col overflow-hidden">
+
+    <div class="px-4 py-4 bg-blue-500 text-white font-bold text-lg">
+        AI ChatBot
+    </div>
+
+    <div class="flex-1 px-4 py-4 overflow-y-auto flex flex-col gap-3" id="chatMessages">
+    </div>
+
+    <div class="px-4 py-3 border-t border-gray-200 flex gap-2 bg-white">
+        <input
+            type="text"
+            class="flex-1 px-4 py-2.5 border border-gray-300 rounded-full text-sm outline-none transition-colors focus:border-blue-500"
+            id="chatInput"
+            placeholder="input message..."
+            autocomplete="off"
+        >
+        <button
+            class="bg-blue-500 text-white px-5 rounded-full font-medium transition-colors hover:bg-blue-700"
+            id="sendBtn"
+        >Send</button>
+    </div>
+</div>
+
+<script>
+    const chatMessages = document.getElementById('chatMessages');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+
+    function appendMessage(text, sender) {
+        if (!text.trim()) return;
+
+        const messageDiv = document.createElement('div');
+        const baseClasses = 'max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words animate-fade-in';
+        const senderClasses = sender === 'user'
+            ? 'bg-blue-500 text-white self-end rounded-br-sm'
+            : 'bg-gray-200 text-gray-800 self-start rounded-bl-sm';
+
+        messageDiv.className = `${baseClasses} ${senderClasses}`;
+        messageDiv.textContent = text;
+
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    async function sendChatMessage(userMessage) {
+        const url = '/chat';
+        const payload = {
+            message: userMessage,
+            conversationId: getSessionUuid()
+        };
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`連線錯誤：${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.message;
+
+        } catch (error) {
+            console.error('發送失敗:', error);
+            return '系統錯誤，請稍後再試。';
+        }
+    }
+
+    async function handleSend() {
+        const messageText = chatInput.value.trim();
+        if (!messageText) return;
+
+        appendMessage(messageText, 'user');
+        chatInput.value = '';
+
+        appendMessage('思考中...', 'bot');
+
+        const allBotMessages = chatMessages.querySelectorAll('.self-start');
+        const loadingMessageDiv = allBotMessages[allBotMessages.length - 1];
+
+        const replyText = await sendChatMessage(messageText);
+        loadingMessageDiv.textContent = replyText;
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    sendBtn.addEventListener('click', handleSend);
+
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSend();
+    });
+
+    function getSessionUuid() {
+        let uuid = sessionStorage.getItem('chat_session_uuid');
+        if (!uuid) {
+            uuid = crypto.randomUUID();
+            sessionStorage.setItem('chat_session_uuid', uuid);
+        }
+        return uuid;
+    }
+</script>
+</body>
 </html>

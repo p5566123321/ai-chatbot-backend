@@ -1,6 +1,7 @@
 plugins {
     kotlin("jvm") version "2.3.21"
     kotlin("plugin.spring") version "2.3.21"
+    kotlin("plugin.jpa") version "2.3.21"
     id("org.springframework.boot") version "4.0.6"
     id("io.spring.dependency-management") version "1.1.7"
 }
@@ -25,6 +26,8 @@ dependencies {
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("com.google.genai:google-genai:1.0.0")
     implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation(platform("me.paulschwarz:spring-dotenv-bom:5.1.0"))
 
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
@@ -35,6 +38,9 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     developmentOnly("org.springframework.boot:spring-boot-devtools")
+    developmentOnly("me.paulschwarz:springboot4-dotenv")
+
+    runtimeOnly("org.postgresql:postgresql")
 }
 
 kotlin {

@@ -3,3 +3,18 @@ spring:
     name: chatbot
   thymeleaf:
     cache: false
+  datasource:
+    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:-ai_chat}
+    username: ${POSTGRES_USER:-postgres}
+    password: ${POSTGRES_PASSWORD:-postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+app:
+  llm:
+    provider: gemini
