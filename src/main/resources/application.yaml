@@ -1,8 +1,6 @@
 spring:
   application:
     name: chatbot
-  thymeleaf:
-    cache: false
   datasource:
     url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:-ai_chat}
     username: ${POSTGRES_USER:-postgres}

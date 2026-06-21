@@ -40,8 +40,3 @@ out/
 .kotlin
 
 .env
-
-# Tailwind CSS
-tailwindcss
-tailwindcss-*
-src/main/resources/static/css/output.css
