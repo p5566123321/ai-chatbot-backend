@@ -41,7 +41,7 @@ class ChatServiceTest {
 
         val result = chatService.chat("test-uuid", "Hello")
 
-        assertEquals(ChatResponse("<p>Hi there!</p>\n", "gemini-2.0-flash", 123L), result)
+        assertEquals(ChatResponse("Hi there!", "gemini-2.0-flash", 123L), result)
     }
 
     @Test
@@ -84,7 +84,7 @@ class ChatServiceTest {
 
         val result = chatService.chat("new-uuid", "Hi")
 
-        assertEquals("<p>Hello!</p>\n", result.message)
+        assertEquals("Hello!", result.message)
         verify { conversationService.getOrCreateConversation("new-uuid") }
     }
 
@@ -113,35 +113,7 @@ class ChatServiceTest {
     }
 
     @Test
-    fun `chat renders bold markdown in response`() {
-        val llmResponse = LlmResponse(message = "**bold** text", model = "gemini-2.0-flash", latencyMs = 10L)
-
-        every { conversationService.getOrCreateConversation("test-uuid") } returns conversation
-        every { conversationService.addMessage(any(), any(), any()) } returns Unit
-        every { conversationService.getMessages(conversation) } returns messages
-        every { llmProvider.generate(messages) } returns llmResponse
-
-        val result = chatService.chat("test-uuid", "Hello")
-
-        assertEquals("<p><strong>bold</strong> text</p>\n", result.message)
-    }
-
-    @Test
-    fun `chat renders heading markdown in response`() {
-        val llmResponse = LlmResponse(message = "# Title", model = "gemini-2.0-flash", latencyMs = 10L)
-
-        every { conversationService.getOrCreateConversation("test-uuid") } returns conversation
-        every { conversationService.addMessage(any(), any(), any()) } returns Unit
-        every { conversationService.getMessages(conversation) } returns messages
-        every { llmProvider.generate(messages) } returns llmResponse
-
-        val result = chatService.chat("test-uuid", "Hello")
-
-        assertEquals("<h1>Title</h1>\n", result.message)
-    }
-
-    @Test
-    fun `chat saves raw markdown to db but returns html in response`() {
+    fun `chat returns raw markdown in response without html conversion`() {
         val markdown = "**bold**"
         val llmResponse = LlmResponse(message = markdown, model = "gemini-2.0-flash", latencyMs = 10L)
 
@@ -153,6 +125,6 @@ class ChatServiceTest {
         val result = chatService.chat("test-uuid", "Hello")
 
         verify { conversationService.addMessage(conversation, Role.ASSISTANT, markdown) }
-        assertEquals("<p><strong>bold</strong></p>\n", result.message)
+        assertEquals(markdown, result.message)
     }
 }
