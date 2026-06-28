@@ -8,3 +8,9 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-ai_chat}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+
+  redis:
+    image: redis:8.8.0-alpine
+    restart: always
+    ports:
+      - "6379:6379"

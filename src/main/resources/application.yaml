@@ -1,6 +1,12 @@
 spring:
   application:
     name: chatbot
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
   datasource:
     url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:-ai_chat}
     username: ${POSTGRES_USER:-postgres}
