@@ -17,11 +17,10 @@ class ChatService(
 
     @Transactional
     fun chat(conversationId: String, userMsg: String): ChatResponse {
-        val conversation = conversationService.getOrCreateConversation(conversationId)
 
-        conversationService.addMessage(conversation, Role.USER, userMsg)
+        var messages = conversationService.getHistory(conversationId)
 
-        val messages = conversationService.getMessages(conversation)
+        messages += conversationService.saveMessage(conversationId, Role.USER, userMsg)
 
         val llmResponse = runCatching {
             llmProvider.generate(messages)
@@ -29,7 +28,8 @@ class ChatService(
             logger.error("LLM API failed", e)
             throw ChatException("AI service unable to response.", e)
         }
-        conversationService.addMessage(conversation, Role.ASSISTANT, llmResponse.message)
+
+        conversationService.saveMessage(conversationId, Role.ASSISTANT, llmResponse.message)
 
         return ChatResponse(llmResponse.message, llmResponse.model, llmResponse.latencyMs)
     }

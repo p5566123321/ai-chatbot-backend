@@ -6,97 +6,125 @@ import io.mockk.slot
 import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.redis.RedisService
+import java.util.Optional
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ConversationServiceTest {
     private val conversationRepository: ConversationRepository = mockk()
     private val messageRepository: MessageRepository = mockk()
+    private val redisService: RedisService = mockk()
+
     private lateinit var conversationService: ConversationService
 
-    private val conversation = Conversation(id = 1L, uuid = "test-uuid")
+    private val conversationId = "test-uuid"
+    private val conversation = Conversation(id = 1L, uuid = conversationId)
 
     @BeforeEach
     fun setUp() {
-        conversationService = ConversationService(conversationRepository, messageRepository)
+        conversationService = ConversationService(conversationRepository, messageRepository, redisService)
     }
 
-    // getOrCreateConversation
+    // getHistory
 
     @Test
-    fun `getOrCreateConversation returns existing conversation when found`() {
-        every { conversationRepository.findByUuid("test-uuid") } returns conversation
+    fun `getHistory returns cached messages from redis without touching the database`() {
+        val cached = listOf(
+            Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
+        )
+        every { redisService.getChatHistory(conversationId) } returns cached
 
-        val result = conversationService.getOrCreateConversation("test-uuid")
+        val result = conversationService.getHistory(conversationId)
 
-        assertEquals(conversation, result)
+        assertEquals(cached, result)
+        verify(exactly = 0) { conversationRepository.findByUuid(any()) }
+        verify(exactly = 0) { messageRepository.findByConversationOrderByCreatedAtDesc(any(), any()) }
+    }
+
+    @Test
+    fun `getHistory loads from database and repopulates redis when cache is empty`() {
+        val oldest = Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello")
+        val newest = Message(id = 2L, conversation = conversation, role = Role.ASSISTANT, content = "Hi!")
+        // repository returns newest-first; getHistory must restore chronological order
+        val descendingFromDb = listOf(newest, oldest)
+        every { redisService.getChatHistory(conversationId) } returns emptyList()
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.findByConversationOrderByCreatedAtDesc(conversation, any()) } returns descendingFromDb
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+
+        val result = conversationService.getHistory(conversationId)
+
+        assertEquals(listOf(oldest, newest), result)
+        verify { redisService.saveChatMessage(conversationId, oldest) }
+        verify { redisService.saveChatMessage(conversationId, newest) }
         verify(exactly = 0) { conversationRepository.save(any()) }
     }
 
     @Test
-    fun `getOrCreateConversation creates and saves new conversation when not found`() {
-        val newConversation = Conversation(id = 2L, uuid = "new-uuid")
+    fun `getHistory creates a new conversation when none exists yet`() {
+        every { redisService.getChatHistory(conversationId) } returns emptyList()
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
+        every { conversationRepository.save(any()) } returns conversation
+        every { messageRepository.findByConversationOrderByCreatedAtDesc(conversation, any()) } returns emptyList()
 
-        every { conversationRepository.findByUuid("new-uuid") } returns null
-        every { conversationRepository.save(any()) } returns newConversation
+        val result = conversationService.getHistory(conversationId)
 
-        val result = conversationService.getOrCreateConversation("new-uuid")
-
-        assertEquals(newConversation, result)
-        verify { conversationRepository.save(match { it.uuid == "new-uuid" && it.id == null }) }
+        assertTrue(result.isEmpty())
+        verify { conversationRepository.save(match { it.uuid == conversationId }) }
     }
 
-    // getMessages
+    // saveMessage
 
     @Test
-    fun `getMessages returns messages for the conversation`() {
-        val messages = listOf(
-            Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
-            Message(id = 2L, conversation = conversation, role = Role.ASSISTANT, content = "Hi!")
-        )
-
-        every { messageRepository.findByConversation(conversation) } returns messages
-
-        val result = conversationService.getMessages(conversation)
-
-        assertEquals(messages, result)
-    }
-
-    @Test
-    fun `getMessages returns empty list when conversation has no messages`() {
-        every { messageRepository.findByConversation(conversation) } returns emptyList()
-
-        val result = conversationService.getMessages(conversation)
-
-        assertEquals(emptyList(), result)
-    }
-
-    // addMessage
-
-    @Test
-    fun `addMessage saves message with correct conversation, role, and content`() {
+    fun `saveMessage saves message with correct conversation, role, and content`() {
         val slot = slot<Message>()
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
         every { messageRepository.save(capture(slot)) } answers { slot.captured }
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
 
-        conversationService.addMessage(conversation, Role.USER, "Hello")
+        val result = conversationService.saveMessage(conversationId, Role.USER, "Hello")
 
-        val saved = slot.captured
-        assertEquals(conversation, saved.conversation)
-        assertEquals(Role.USER, saved.role)
-        assertEquals("Hello", saved.content)
+        assertEquals(conversation, result.conversation)
+        assertEquals(Role.USER, result.role)
+        assertEquals("Hello", result.content)
+        verify { messageRepository.save(any()) }
     }
 
     @Test
-    fun `addMessage saves assistant message correctly`() {
-        val slot = slot<Message>()
-        every { messageRepository.save(capture(slot)) } answers { slot.captured }
+    fun `saveMessage writes to redis outside an active transaction`() {
+        // no Spring transaction is bound in this unit test, so the cache write happens inline
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.save(any()) } answers { firstArg() }
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
 
-        conversationService.addMessage(conversation, Role.ASSISTANT, "How can I help?")
+        conversationService.saveMessage(conversationId, Role.USER, "Hello")
 
-        val saved = slot.captured
-        assertEquals(Role.ASSISTANT, saved.role)
-        assertEquals("How can I help?", saved.content)
+        verify { redisService.saveChatMessage(conversationId, match { it.content == "Hello" }) }
+    }
+
+    @Test
+    fun `saveMessage saves assistant message correctly`() {
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { messageRepository.save(any()) } answers { firstArg() }
+
+        val result = conversationService.saveMessage(conversationId, Role.ASSISTANT, "How can I help?")
+
+        assertEquals(Role.ASSISTANT, result.role)
+        assertEquals("How can I help?", result.content)
+    }
+
+    @Test
+    fun `saveMessage throws when conversation does not exist`() {
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
+
+        assertThrows<NoSuchElementException> {
+            conversationService.saveMessage(conversationId, Role.USER, "Hello")
+        }
     }
 }

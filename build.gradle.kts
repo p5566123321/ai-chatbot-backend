@@ -28,6 +28,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation(platform("me.paulschwarz:spring-dotenv-bom:5.1.0"))
     implementation("org.springframework.boot:spring-boot-starter-data-redis:4.1.0")
+    implementation("org.springframework.session:spring-session-data-redis")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
 
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")

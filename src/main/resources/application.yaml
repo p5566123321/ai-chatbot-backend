@@ -19,6 +19,13 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  session:
+    store-type: redis
+    timeout: 30m
 app:
   llm:
     provider: gemini
+  conversation:
+    cache:
+      ttl-min: 30
+      max-msg: 10
