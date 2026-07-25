@@ -21,7 +21,6 @@ class RedisService(
     private val ttlMinutes = 30L
 
     fun getChatHistory(conversationId: String): List<Message> {
-        logger.info("[REDIS] get chat history: conversationId=$conversationId ")
         val redisKey = "chat:conversation:$conversationId"
 
         // LRANGE key 0 -1

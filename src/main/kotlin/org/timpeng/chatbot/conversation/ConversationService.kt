@@ -28,6 +28,8 @@ class ConversationService (
 
     fun getHistory(conversationId : String): List<Message> {
         var messages = redisService.getChatHistory(conversationId)
+        logger.info("[REDIS] get chat history: conversationId=$conversationId, msg_nums=${messages.size} ")
+
         if(messages.isEmpty()){
             val conversation = conversationRepository.findByUuid(conversationId)
                 .orElseGet {
