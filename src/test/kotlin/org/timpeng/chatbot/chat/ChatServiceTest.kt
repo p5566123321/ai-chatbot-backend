@@ -40,12 +40,12 @@ class ChatServiceTest {
     @Test
     fun `chat returns response with llm message, model, and latency`() {
         val llmResponse = LlmResponse(message = "Hi there!", model = "gemini-2.0-flash", latencyMs = 123L)
+        val messagesWithUser = history + userMessage("Hello")
 
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } returns llmResponse
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, "Hi there!") } returns
-            assistantMessage("Hi there!")
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
+            ChatResponse("Hi there!", "gemini-2.0-flash", 123L)
 
         val result = chatService.chat(conversationId, "Hello")
 
@@ -55,29 +55,31 @@ class ChatServiceTest {
     @Test
     fun `chat saves user message before calling llm`() {
         val llmResponse = LlmResponse(message = "Hi!", model = "gemini-2.0-flash", latencyMs = 50L)
+        val messagesWithUser = history + userMessage("Hello")
 
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } returns llmResponse
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, "Hi!") } returns assistantMessage("Hi!")
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
+            ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
         chatService.chat(conversationId, "Hello")
 
-        verify { conversationService.saveMessage(conversationId, Role.USER, "Hello") }
+        verify { conversationService.saveUserMessage(conversationId, "Hello") }
     }
 
     @Test
     fun `chat saves assistant message after llm responds`() {
         val llmResponse = LlmResponse(message = "Hi!", model = "gemini-2.0-flash", latencyMs = 50L)
+        val messagesWithUser = history + userMessage("Hello")
 
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } returns llmResponse
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, "Hi!") } returns assistantMessage("Hi!")
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
+            ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
         chatService.chat(conversationId, "Hello")
 
-        verify { conversationService.saveMessage(conversationId, Role.ASSISTANT, "Hi!") }
+        verify { conversationService.saveAssistantMessage(conversationId, llmResponse) }
     }
 
     @Test
@@ -87,23 +89,23 @@ class ChatServiceTest {
         val newUserMessage = Message(id = 4L, conversation = newConversation, role = Role.USER, content = "Hi")
         val llmResponse = LlmResponse(message = "Hello!", model = "gemini-2.0-flash", latencyMs = 80L)
 
-        every { conversationService.getHistory(newConversationId) } returns emptyList()
-        every { conversationService.saveMessage(newConversationId, Role.USER, "Hi") } returns newUserMessage
+        every { conversationService.saveUserMessage(newConversationId, "Hi") } returns listOf(newUserMessage)
         every { llmProvider.generate(listOf(newUserMessage)) } returns llmResponse
-        every { conversationService.saveMessage(newConversationId, Role.ASSISTANT, "Hello!") } returns
-            Message(id = 5L, conversation = newConversation, role = Role.ASSISTANT, content = "Hello!")
+        every { conversationService.saveAssistantMessage(newConversationId, llmResponse) } returns
+            ChatResponse("Hello!", "gemini-2.0-flash", 80L)
 
         val result = chatService.chat(newConversationId, "Hi")
 
         assertEquals("Hello!", result.message)
-        verify { conversationService.getHistory(newConversationId) }
+        verify { conversationService.saveUserMessage(newConversationId, "Hi") }
     }
 
     @Test
     fun `chat throws ChatException when llm provider fails`() {
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } throws RuntimeException("LLM unavailable")
+        val messagesWithUser = history + userMessage("Hello")
+
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
 
         assertThrows<ChatException> {
             chatService.chat(conversationId, "Hello")
@@ -112,29 +114,30 @@ class ChatServiceTest {
 
     @Test
     fun `chat does not save assistant message when llm provider fails`() {
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } throws RuntimeException("LLM unavailable")
+        val messagesWithUser = history + userMessage("Hello")
+
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
 
         runCatching { chatService.chat(conversationId, "Hello") }
 
-        verify(exactly = 0) { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) }
+        verify(exactly = 0) { conversationService.saveAssistantMessage(conversationId, any()) }
     }
 
     @Test
     fun `chat returns raw markdown in response without html conversion`() {
         val markdown = "**bold**"
         val llmResponse = LlmResponse(message = markdown, model = "gemini-2.0-flash", latencyMs = 10L)
+        val messagesWithUser = history + userMessage("Hello")
 
-        every { conversationService.getHistory(conversationId) } returns history
-        every { conversationService.saveMessage(conversationId, Role.USER, "Hello") } returns userMessage("Hello")
-        every { llmProvider.generate(history + userMessage("Hello")) } returns llmResponse
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, markdown) } returns
-            assistantMessage(markdown)
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
+            ChatResponse(markdown, "gemini-2.0-flash", 10L)
 
         val result = chatService.chat(conversationId, "Hello")
 
-        verify { conversationService.saveMessage(conversationId, Role.ASSISTANT, markdown) }
+        verify { conversationService.saveAssistantMessage(conversationId, llmResponse) }
         assertEquals(markdown, result.message)
     }
 }

@@ -7,15 +7,17 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.timpeng.chatbot.chat.ChatResponse
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.llm.LlmResponse
 import org.timpeng.chatbot.redis.RedisService
 import java.util.Optional
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class ConversationServiceTest {
+    private val conversationHistoryService: ConversationHistoryService = mockk()
     private val conversationRepository: ConversationRepository = mockk()
     private val messageRepository: MessageRepository = mockk()
     private val redisService: RedisService = mockk()
@@ -27,55 +29,7 @@ class ConversationServiceTest {
 
     @BeforeEach
     fun setUp() {
-        conversationService = ConversationService(conversationRepository, messageRepository, redisService)
-    }
-
-    // getHistory
-
-    @Test
-    fun `getHistory returns cached messages from redis without touching the database`() {
-        val cached = listOf(
-            Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
-        )
-        every { redisService.getChatHistory(conversationId) } returns cached
-
-        val result = conversationService.getHistory(conversationId)
-
-        assertEquals(cached, result)
-        verify(exactly = 0) { conversationRepository.findByUuid(any()) }
-        verify(exactly = 0) { messageRepository.findByConversationOrderByCreatedAtDesc(any(), any()) }
-    }
-
-    @Test
-    fun `getHistory loads from database and repopulates redis when cache is empty`() {
-        val oldest = Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello")
-        val newest = Message(id = 2L, conversation = conversation, role = Role.ASSISTANT, content = "Hi!")
-        // repository returns newest-first; getHistory must restore chronological order
-        val descendingFromDb = listOf(newest, oldest)
-        every { redisService.getChatHistory(conversationId) } returns emptyList()
-        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
-        every { messageRepository.findByConversationOrderByCreatedAtDesc(conversation, any()) } returns descendingFromDb
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
-
-        val result = conversationService.getHistory(conversationId)
-
-        assertEquals(listOf(oldest, newest), result)
-        verify { redisService.saveChatMessage(conversationId, oldest) }
-        verify { redisService.saveChatMessage(conversationId, newest) }
-        verify(exactly = 0) { conversationRepository.save(any()) }
-    }
-
-    @Test
-    fun `getHistory creates a new conversation when none exists yet`() {
-        every { redisService.getChatHistory(conversationId) } returns emptyList()
-        every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
-        every { conversationRepository.save(any()) } returns conversation
-        every { messageRepository.findByConversationOrderByCreatedAtDesc(conversation, any()) } returns emptyList()
-
-        val result = conversationService.getHistory(conversationId)
-
-        assertTrue(result.isEmpty())
-        verify { conversationRepository.save(match { it.uuid == conversationId }) }
+        conversationService = ConversationService(conversationRepository, messageRepository, redisService, conversationHistoryService)
     }
 
     // saveMessage
@@ -126,5 +80,36 @@ class ConversationServiceTest {
         assertThrows<NoSuchElementException> {
             conversationService.saveMessage(conversationId, Role.USER, "Hello")
         }
+    }
+
+    // saveUserMessage / saveAssistantMessage
+
+    @Test
+    fun `saveUserMessage appends the new message to history from historyService`() {
+        val history = listOf(Message(id = 1L, conversation = conversation, role = Role.USER, content = "previous"))
+        every { conversationHistoryService.getHistory(conversationId) } returns history
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.save(any()) } answers { firstArg() }
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+
+        val result = conversationService.saveUserMessage(conversationId, "Hello")
+
+        assertEquals(2, result.size)
+        assertEquals("previous", result[0].content)
+        assertEquals(Role.USER, result[1].role)
+        assertEquals("Hello", result[1].content)
+    }
+
+    @Test
+    fun `saveAssistantMessage saves the assistant reply and returns a ChatResponse`() {
+        val llmResponse = LlmResponse(message = "Hi!", model = "gemini-3-flash-preview", latencyMs = 42L)
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.save(any()) } answers { firstArg() }
+        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+
+        val result = conversationService.saveAssistantMessage(conversationId, llmResponse)
+
+        assertEquals(ChatResponse("Hi!", "gemini-3-flash-preview", 42L), result)
+        verify { messageRepository.save(match { it.role == Role.ASSISTANT && it.content == "Hi!" }) }
     }
 }

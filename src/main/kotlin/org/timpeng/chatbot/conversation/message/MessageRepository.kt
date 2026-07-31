@@ -6,5 +6,5 @@ import org.timpeng.chatbot.conversation.Conversation
 
 interface MessageRepository : JpaRepository<Message, Long> {
 
-    fun findByConversationOrderByCreatedAtDesc(conversation: Conversation, pageable: Pageable): List<Message>
+    fun findByConversationOrderByCreatedAt(conversation: Conversation, pageable: Pageable): List<Message>
 }

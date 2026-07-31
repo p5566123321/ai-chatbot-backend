@@ -17,6 +17,7 @@ class RedisService(
 
     @Value("\${app.conversation.cache.max-msg}")
     private val maxMessages = 10L
+
     @Value("\${app.conversation.cache.ttl-min}")
     private val ttlMinutes = 30L
 
@@ -26,27 +27,31 @@ class RedisService(
         // LRANGE key 0 -1
         val jsonList = redisTemplate.opsForList().range(redisKey, 0, -1) ?: emptyList()
 
+        logger.info("[REDIS] get chat history: conversationId=$conversationId, length=${jsonList.size} ")
+
         return jsonList.map { objectMapper.readValue(it, Message::class.java) }
     }
 
     fun saveChatMessage(conversationId: String, message: Message) {
-        logger.info("[GetHistory] no conversation with id=$conversationId, create new conversation.")
 
         val redisKey = "chat:conversation:$conversationId"
         val jsonMessage = objectMapper.writeValueAsString(message)
 
-        // 使用 Redis Pipeline 或 Execute 確保操作連續執行
         redisTemplate.executePipelined { connection ->
-            // 1. RPUSH
             redisTemplate.opsForList().rightPush(redisKey, jsonMessage)
 
-            // 2. LTRIM (只保留最近 maxMessages 則)
             redisTemplate.opsForList().trim(redisKey, -maxMessages, -1)
 
-            // 3. EXPIRE (延長 30 分鐘)
             redisTemplate.expire(redisKey, Duration.ofMinutes(ttlMinutes))
 
-            null // executePipelined 需要回傳 null
+            null
+        }
+
+    }
+
+    fun saveChatMessageList(conversationId: String, messages: List<Message>) {
+        for (message in messages) {
+            saveChatMessage(conversationId, message)
         }
     }
 

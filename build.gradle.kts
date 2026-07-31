@@ -22,13 +22,15 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
-    implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("tools.jackson.module:jackson-module-kotlin")
-    implementation("com.google.genai:google-genai:1.0.0")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis:4.1.0")
     implementation("org.springframework.session:spring-session-data-redis")
+    implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
+    implementation("tools.jackson.module:jackson-module-kotlin")
+    implementation("com.google.genai:google-genai:1.0.0")
 
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")

@@ -15,16 +15,22 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
     properties:
       hibernate:
         format_sql: true
   session:
     store-type: redis
     timeout: 30m
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
 app:
   llm:
     provider: gemini
+    gemini:
+      model: ${GEMINI_MODEL}
   conversation:
     cache:
       ttl-min: 30
