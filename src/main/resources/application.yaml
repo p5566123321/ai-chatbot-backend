@@ -3,22 +3,35 @@ spring:
     name: chatbot
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      database: ${REDIS_DB:0}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DB}
   datasource:
-    url: jdbc:postgresql://localhost:5432/${POSTGRES_DB:-ai_chat}
-    username: ${POSTGRES_USER:-postgres}
-    password: ${POSTGRES_PASSWORD:-postgres}
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
     properties:
       hibernate:
         format_sql: true
+  session:
+    store-type: redis
+    timeout: 30m
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
 app:
   llm:
     provider: gemini
+    gemini:
+      model: ${GEMINI_MODEL}
+  conversation:
+    cache:
+      ttl-min: 30
+      max-msg: 10

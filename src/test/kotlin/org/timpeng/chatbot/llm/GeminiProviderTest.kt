@@ -3,6 +3,8 @@ package org.timpeng.chatbot.llm
 import com.google.genai.Models
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentResponse
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
+import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -19,17 +22,20 @@ class GeminiProviderTest {
 
     private val models: Models = mockk(relaxed = true)
     private lateinit var geminiProvider: GeminiProvider
+    private val meterRegistry: MeterRegistry = SimpleMeterRegistry()
+
 
     private val conversation = Conversation(id = 1L, uuid = "test-uuid")
 
     @BeforeEach
     fun setUp() {
-        geminiProvider = GeminiProvider(models)
+        geminiProvider = GeminiProvider(models, meterRegistry)
     }
 
     private fun stubGenerate(replyText: String): GenerateContentResponse {
         val response: GenerateContentResponse = mockk(relaxed = true)
         every { response.text() } returns replyText
+        every { response.usageMetadata() } returns Optional.empty()
         every { models.generateContent(any<String>(), any<List<Content>>(), null) } returns response
         return response
     }

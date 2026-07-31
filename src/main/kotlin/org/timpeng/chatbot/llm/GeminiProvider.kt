@@ -3,7 +3,10 @@ package org.timpeng.chatbot.llm
 import com.google.genai.Models
 import com.google.genai.types.Content
 import com.google.genai.types.Part
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.timpeng.chatbot.conversation.message.Message
@@ -14,10 +17,12 @@ import kotlin.time.measureTimedValue
 @ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "gemini")
 class GeminiProvider(
     private val models: Models,
+    private val meterRegistry: MeterRegistry,
 ) : LlmProvider {
 
     private val logger = LoggerFactory.getLogger(GeminiProvider::class.java)
 
+    @Value("\${app.llm.gemini.model}")
     private val model = "gemini-3-flash-preview"
 
     override fun generate(
@@ -36,6 +41,8 @@ class GeminiProvider(
             }
         }
 
+        var outcome = "success"
+        val sample = Timer.start(meterRegistry)
         try {
             val (response, duration) = measureTimedValue {
                 models.generateContent(
@@ -45,11 +52,18 @@ class GeminiProvider(
                 )
             }
 
+            val usage = response.usageMetadata().orElse(null)
+            val promptTokens = usage?.promptTokenCount()?.orElse(null)
+            val candidatesTokens = usage?.candidatesTokenCount()?.orElse(null)
+            val totalTokens = usage?.totalTokenCount()?.orElse(null)
+
             logger.info(
-                "model={}, latency={}, tokenUsage={}",
+                "[Gemini API] model={}, latency={}, promptTokens={}, candidatesTokens={}, totalTokens={}",
                 model,
                 duration.inWholeMilliseconds,
-                response.usageMetadata()
+                promptTokens,
+                candidatesTokens,
+                totalTokens,
             )
 
             return LlmResponse(
@@ -58,7 +72,18 @@ class GeminiProvider(
                 duration.inWholeMilliseconds
             )
         } catch (_: java.lang.Exception) {
-            throw LlmException("Gemini unavailable")
+            outcome = "failure"
+            throw LlmException("[Gemini API] unavailable")
+        } finally {
+            sample.stop(
+                Timer.builder("llm.generate.time")
+                    .description("LLM API 呼叫耗時")
+                    .tag("provider", "gemini")
+                    .tag("model", model)
+                    .tag("outcome", outcome)
+                    .publishPercentiles(0.5, 0.95, 0.99)
+                    .register(meterRegistry)
+            )
         }
     }
 }

@@ -1,11 +1,15 @@
 package org.timpeng.chatbot.chat
 
+import io.micrometer.core.annotation.Timed
+import io.micrometer.core.instrument.MeterRegistry
 import jakarta.transaction.Transactional
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.timpeng.chatbot.conversation.ConversationService
+import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
+import org.timpeng.chatbot.llm.LlmResponse
 
 @Service
 class ChatService(
@@ -15,13 +19,10 @@ class ChatService(
 
     private val logger = LoggerFactory.getLogger(ChatService::class.java)
 
-    @Transactional
+    @Timed(value = "total.chat.time", description = "聊天耗時", percentiles = [0.5, 0.95, 0.99])
     fun chat(conversationId: String, userMsg: String): ChatResponse {
-        val conversation = conversationService.getOrCreateConversation(conversationId)
 
-        conversationService.addMessage(conversation, Role.USER, userMsg)
-
-        val messages = conversationService.getMessages(conversation)
+        val messages = conversationService.saveUserMessage(conversationId, userMsg)
 
         val llmResponse = runCatching {
             llmProvider.generate(messages)
@@ -29,8 +30,7 @@ class ChatService(
             logger.error("LLM API failed", e)
             throw ChatException("AI service unable to response.", e)
         }
-        conversationService.addMessage(conversation, Role.ASSISTANT, llmResponse.message)
 
-        return ChatResponse(llmResponse.message, llmResponse.model, llmResponse.latencyMs)
+        return conversationService.saveAssistantMessage(conversationId, llmResponse)
     }
 }
