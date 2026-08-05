@@ -1,6 +1,6 @@
 # ADR-002: Conversation ID Generation Strategy
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-004](004-conversation-id-backend-generated.md)
 
 ## Context
 

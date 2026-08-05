@@ -77,7 +77,7 @@ class ConversationServiceTest {
     fun `saveMessage throws when conversation does not exist`() {
         every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
 
-        assertThrows<NoSuchElementException> {
+        assertThrows<ConversationNotFoundException> {
             conversationService.saveMessage(conversationId, Role.USER, "Hello")
         }
     }

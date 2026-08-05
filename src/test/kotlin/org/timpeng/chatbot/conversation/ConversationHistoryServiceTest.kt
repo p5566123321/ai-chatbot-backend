@@ -6,13 +6,13 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.redis.RedisService
 import java.util.Optional
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class ConversationHistoryServiceTest {
     private val conversationRepository: ConversationRepository = mockk()
@@ -66,16 +66,13 @@ class ConversationHistoryServiceTest {
     }
 
     @Test
-    fun `getHistory creates a new conversation when none exists yet`() {
+    fun `getHistory throws when conversation does not exist`() {
         every { redisService.getChatHistory(conversationId) } returns emptyList()
         every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
-        every { conversationRepository.save(any()) } returns conversation
-        every { messageRepository.findByConversationOrderByCreatedAt(conversation, any()) } returns emptyList()
-        every { redisService.saveChatMessageList(conversationId, emptyList()) } returns Unit
 
-        val result = conversationHistoryService.getHistory(conversationId)
-
-        assertTrue(result.isEmpty())
-        verify { conversationRepository.save(match { it.uuid == conversationId }) }
+        assertThrows<ConversationNotFoundException> {
+            conversationHistoryService.getHistory(conversationId)
+        }
+        verify(exactly = 0) { conversationRepository.save(any()) }
     }
 }

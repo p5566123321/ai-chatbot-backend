@@ -10,6 +10,7 @@ import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmResponse
 import org.timpeng.chatbot.redis.RedisService
+import java.util.UUID
 
 
 @Service
@@ -20,9 +21,13 @@ class ConversationService (
     private val historyService: ConversationHistoryService,
 ) {
 
+    fun createConversation(): Conversation {
+        return conversationRepository.save(Conversation(uuid = UUID.randomUUID().toString()))
+    }
+
     fun saveMessage(conversationId: String, role : Role, content: String): Message {
         val conversation = conversationRepository.findByUuid(conversationId)
-            .orElseThrow{NoSuchElementException("Conversation not found: $conversationId")}
+            .orElseThrow{ConversationNotFoundException("Conversation not found: $conversationId")}
         val message = Message(conversation = conversation, role = role, content = content)
         messageRepository.save(message)
         cacheAfterCommit(conversationId, message)

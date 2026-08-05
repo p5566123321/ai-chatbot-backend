@@ -7,4 +7,6 @@ interface LlmProvider {
     fun generate(
         messages: List<Message>
     ): LlmResponse
+
+    fun streamGenerate(messagesWithUser: List<Message>, onChunk: (String) -> Unit)
 }

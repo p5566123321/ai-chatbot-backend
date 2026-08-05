@@ -128,6 +128,20 @@ class GeminiProviderTest {
     }
 
     @Test
+    fun `generate preserves the original exception as cause`() {
+        val originalError = RuntimeException("quota exceeded")
+        every { models.generateContent(any<String>(), any<List<Content>>(), null) } throws originalError
+
+        val thrown = assertThrows<LlmException> {
+            geminiProvider.generate(listOf(
+                Message(conversation = conversation, role = Role.USER, content = "Hi")
+            ))
+        }
+
+        assertEquals(originalError, thrown.cause)
+    }
+
+    @Test
     fun `generate with only system messages sends empty contents`() {
         stubGenerate("Hello!")
 

@@ -42,14 +42,7 @@ class ConversationHistoryService (
         if(!cacheHit){
             val dbSample = Timer.start(meterRegistry)
             val conversation = conversationRepository.findByUuid(conversationId)
-                .orElseGet {
-                    logger.info("[GetHistory] no conversation with id=$conversationId, create new conversation.")
-                    conversationRepository.save(
-                        Conversation(
-                            uuid = conversationId
-                        )
-                    )
-                }
+                .orElseThrow { ConversationNotFoundException("Conversation not found: $conversationId") }
             val pageable: Pageable = PageRequest.of(0, maxMessages)
 
             messages = messageRepository.findByConversationOrderByCreatedAt(conversation, pageable)

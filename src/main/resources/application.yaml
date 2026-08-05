@@ -31,6 +31,9 @@ app:
     provider: gemini
     gemini:
       model: ${GEMINI_MODEL}
+      timeout-ms: ${GEMINI_TIMEOUT_MS:30000}
+  sse:
+    timeout-ms: ${SSE_TIMEOUT_MS:60000}
   conversation:
     cache:
       ttl-min: 30
