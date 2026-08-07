@@ -39,3 +39,7 @@ app:
       enabled: ${CONVERSATION_CACHE_ENABLED:true}
       ttl-min: 30
       max-msg: 10
+  queue:
+    max-attempts: 3
+    block-timeout-ms: 5000
+    reclaim-idle-ms: 30000
