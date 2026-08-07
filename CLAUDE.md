@@ -54,17 +54,25 @@ that used to mask stale/typo'd client IDs (see ADR-004's "Context").
 
 ### Cache-aside conversation history (ADR-003)
 
-`ConversationHistoryService.getHistory()` is the single read path for conversation context:
-1. Try Redis (`chat:conversation:{id}` list) first.
-2. On a miss, load the last `app.conversation.cache.max-msg` messages from Postgres and backfill
-   Redis so the next read in the same session is a hit.
-3. Redis is a pure cache (30 min TTL, `app.conversation.cache.ttl-min`) — Postgres is always the
-   source of truth; nothing is lost if Redis is flushed.
+`ConversationHistoryService` is an interface with two implementations, wired conditionally on
+`app.conversation.cache.enabled` (mirrors the `LlmProvider`/`GeminiProvider` conditional-bean
+pattern below):
+- `DatabaseConversationHistoryService` — always registered; reads the last
+  `app.conversation.cache.max-msg` messages straight from Postgres.
+- `CachedConversationHistoryService` — `@Primary` + `@ConditionalOnProperty` decorator, registered
+  whenever caching is enabled (the default). Tries Redis (`chat:conversation:{id}` list) first; on
+  a miss it delegates to `DatabaseConversationHistoryService` and backfills Redis so the next read
+  in the same session is a hit.
 
-`app.conversation.cache.enabled` (env `CONVERSATION_CACHE_ENABLED`) can force every read through
-Postgres — this exists specifically to A/B the Redis benefit under load (see
+Redis is a pure cache (30 min TTL, `app.conversation.cache.ttl-min`) — Postgres is always the
+source of truth; nothing is lost if Redis is flushed.
+
+`app.conversation.cache.enabled=false` (env `CONVERSATION_CACHE_ENABLED`) drops the
+`CachedConversationHistoryService` bean entirely, leaving `DatabaseConversationHistoryService` as
+the sole implementation — this exists specifically to A/B the Redis benefit under load (see
 `docs/decision/005-redis-vs-db-latency-benchmark.md` and `benchmark/k6-history-latency.js`), not
-as a normal runtime toggle.
+as a normal runtime toggle. Adding a third caching strategy means adding another
+`ConversationHistoryService` implementation, not branching inside an existing one.
 
 ### Write-after-commit caching
 
