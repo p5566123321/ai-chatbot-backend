@@ -14,7 +14,7 @@ import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.llm.LlmResponse
-import org.timpeng.chatbot.redis.RedisService
+import org.timpeng.chatbot.redis.GeneratingStatusService
 import java.io.IOException
 import kotlin.test.assertEquals
 
@@ -22,7 +22,7 @@ class ChatServiceTest {
 
     private val conversationService: ConversationService = mockk()
     private val llmProvider: LlmProvider = mockk()
-    private val redisService: RedisService = mockk(relaxed = true)
+    private val generatingStatusService: GeneratingStatusService = mockk(relaxed = true)
     private lateinit var chatService: ChatService
     private val emitter: SseEmitter = mockk(relaxed = true)
 
@@ -34,7 +34,7 @@ class ChatServiceTest {
 
     @BeforeEach
     fun setUp() {
-        chatService = ChatService(conversationService, llmProvider, redisService)
+        chatService = ChatService(conversationService, llmProvider, generatingStatusService)
     }
 
     private fun userMessage(content: String) =
@@ -258,9 +258,9 @@ class ChatServiceTest {
 
         // markGenerating happens synchronously before the async dispatch, clearGenerating only
         // once the background work is done — waiting on emitter.complete() also waits for that.
-        verify { redisService.markGenerating(conversationId) }
+        verify { generatingStatusService.markGenerating(conversationId) }
         verify(timeout = 2000) { emitter.complete() }
-        verify(timeout = 2000) { redisService.clearGenerating(conversationId) }
+        verify(timeout = 2000) { generatingStatusService.clearGenerating(conversationId) }
     }
 
     @Test
@@ -272,12 +272,12 @@ class ChatServiceTest {
 
         chatService.streamChat(conversationId, "hello", emitter)
 
-        verify(timeout = 2000) { redisService.clearGenerating(conversationId) }
+        verify(timeout = 2000) { generatingStatusService.clearGenerating(conversationId) }
     }
 
     @Test
     fun `streamStatus reports generating with partial text when a stream is in flight`(){
-        every { redisService.getGeneratingProgress(conversationId) } returns "partial tex"
+        every { generatingStatusService.getGeneratingProgress(conversationId) } returns "partial tex"
 
         val result = chatService.streamStatus(conversationId)
 
@@ -286,7 +286,7 @@ class ChatServiceTest {
 
     @Test
     fun `streamStatus reports not generating when nothing is in flight`(){
-        every { redisService.getGeneratingProgress(conversationId) } returns null
+        every { generatingStatusService.getGeneratingProgress(conversationId) } returns null
 
         val result = chatService.streamStatus(conversationId)
 

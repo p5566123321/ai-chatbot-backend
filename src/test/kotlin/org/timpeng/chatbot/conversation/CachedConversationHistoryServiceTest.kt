@@ -9,11 +9,11 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
-import org.timpeng.chatbot.redis.RedisService
+import org.timpeng.chatbot.redis.ConversationCacheService
 import kotlin.test.assertEquals
 
 class CachedConversationHistoryServiceTest {
-    private val redisService: RedisService = mockk()
+    private val conversationCacheService: ConversationCacheService = mockk()
     private val delegate: DatabaseConversationHistoryService = mockk()
 
     private lateinit var cachedConversationHistoryService: CachedConversationHistoryService
@@ -24,7 +24,7 @@ class CachedConversationHistoryServiceTest {
     @BeforeEach
     fun setUp() {
         cachedConversationHistoryService = CachedConversationHistoryService(
-            redisService,
+            conversationCacheService,
             delegate,
             SimpleMeterRegistry(),
         )
@@ -35,7 +35,7 @@ class CachedConversationHistoryServiceTest {
         val cached = listOf(
             Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
         )
-        every { redisService.getChatHistory(conversationId) } returns cached
+        every { conversationCacheService.getChatHistory(conversationId) } returns cached
 
         val result = cachedConversationHistoryService.getHistory(conversationId)
 
@@ -49,25 +49,25 @@ class CachedConversationHistoryServiceTest {
             Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
             Message(id = 2L, conversation = conversation, role = Role.ASSISTANT, content = "Hi!"),
         )
-        every { redisService.getChatHistory(conversationId) } returns emptyList()
+        every { conversationCacheService.getChatHistory(conversationId) } returns emptyList()
         every { delegate.getHistory(conversationId) } returns chronological
-        every { redisService.saveChatMessageList(conversationId, chronological) } returns Unit
+        every { conversationCacheService.saveChatMessageList(conversationId, chronological) } returns Unit
 
         val result = cachedConversationHistoryService.getHistory(conversationId)
 
         assertEquals(chronological, result)
-        verify { redisService.saveChatMessageList(conversationId, chronological) }
+        verify { conversationCacheService.saveChatMessageList(conversationId, chronological) }
     }
 
     @Test
     fun `getHistory propagates ConversationNotFoundException from the database delegate on a cache miss`() {
-        every { redisService.getChatHistory(conversationId) } returns emptyList()
+        every { conversationCacheService.getChatHistory(conversationId) } returns emptyList()
         every { delegate.getHistory(conversationId) } throws
             ConversationNotFoundException("Conversation not found: $conversationId")
 
         assertThrows<ConversationNotFoundException> {
             cachedConversationHistoryService.getHistory(conversationId)
         }
-        verify(exactly = 0) { redisService.saveChatMessageList(any(), any()) }
+        verify(exactly = 0) { conversationCacheService.saveChatMessageList(any(), any()) }
     }
 }

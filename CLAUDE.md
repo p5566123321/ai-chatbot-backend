@@ -43,8 +43,8 @@ pattern of mocking collaborators and constructing the class under test directly 
 ### Request flow
 
 `ChatController` / `ConversationController` → `ChatService` / `ConversationService` →
-`ConversationHistoryService` (cache-aside reads) → `RedisService` / JPA repositories →
-`LlmProvider` (Gemini). Full sequence diagram: `docs/chatFlow.md`.
+`ConversationHistoryService` (cache-aside reads) → `ConversationCacheService`/`GeneratingStatusService`
+(Redis) / JPA repositories → `LlmProvider` (Gemini). Full sequence diagram: `docs/chatFlow.md`.
 
 Conversations are backend-generated (ADR-004, superseding ADR-002): `POST /api/conversations`
 creates a `Conversation` row and returns its `uuid`; every other endpoint is scoped under
@@ -74,20 +74,33 @@ the sole implementation — this exists specifically to A/B the Redis benefit un
 as a normal runtime toggle. Adding a third caching strategy means adding another
 `ConversationHistoryService` implementation, not branching inside an existing one.
 
+### Redis usage is split by responsibility, not bundled into one service
+
+`org.timpeng.chatbot.redis` has two single-purpose `@Service` classes instead of one grab-bag
+Redis facade:
+- `ConversationCacheService` — the `chat:conversation:{id}` list used by
+  `CachedConversationHistoryService`/`ConversationService` (history read/write, JSON via
+  `ObjectMapper`).
+- `GeneratingStatusService` — the `chat:generating:{id}` string key used only by `ChatService` to
+  track in-flight SSE streams (see below). Different TTL policy, no JSON involved.
+
+Keep this split when adding new Redis-backed behavior — a new concern gets a new class, not a new
+method bolted onto one of these.
+
 ### Write-after-commit caching
 
 `ConversationService.saveMessage` persists to Postgres inside `@Transactional`, then registers a
-`TransactionSynchronization` so the Redis write only happens `afterCommit`. This avoids caching a
-message whose DB write gets rolled back. Follow this pattern for any new write path that touches
-both Postgres and Redis.
+`TransactionSynchronization` so the `ConversationCacheService` write only happens `afterCommit`.
+This avoids caching a message whose DB write gets rolled back. Follow this pattern for any new
+write path that touches both Postgres and Redis.
 
 ### Streaming chat
 
 `ChatService.streamChat` validates the conversation and saves the user message synchronously (so
 an unknown `conversationId` still surfaces as a normal 404 before any async work starts), then
 runs the actual Gemini streaming call in `CompletableFuture.runAsync` off the servlet thread.
-While a stream is in flight, `RedisService.markGenerating`/`updateGeneratingProgress` (throttled to
-every `PROGRESS_FLUSH_INTERVAL_MS`) let a disconnected/reconnecting client poll
+While a stream is in flight, `GeneratingStatusService.markGenerating`/`updateGeneratingProgress`
+(throttled to every `PROGRESS_FLUSH_INTERVAL_MS`) let a disconnected/reconnecting client poll
 `GET .../messages/stream/status` for partial progress instead of needing to hold the SSE
 connection open. On cancellation or failure mid-stream, the partial response is persisted with a
 `[回覆中斷]` marker rather than discarded.

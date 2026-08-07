@@ -21,7 +21,7 @@ import org.timpeng.chatbot.conversation.ConversationRepository
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
-import org.timpeng.chatbot.redis.RedisService
+import org.timpeng.chatbot.redis.GeneratingStatusService
 import reactor.core.publisher.Flux
 import java.time.Duration
 import java.util.UUID
@@ -39,7 +39,7 @@ class ChatSseIntegrationTest {
     private lateinit var messageRepository: MessageRepository
 
     @Autowired
-    private lateinit var redisService: RedisService
+    private lateinit var generatingStatusService: GeneratingStatusService
 
     @MockkBean
     private lateinit var llmProvider: LlmProvider
@@ -64,7 +64,7 @@ class ChatSseIntegrationTest {
 
     @AfterEach
     fun tearDown() {
-        redisService.clearGenerating(conversationId)
+        generatingStatusService.clearGenerating(conversationId)
         conversationRepository.findByUuid(conversationId).ifPresent { conversation ->
             messageRepository.deleteAll(
                 messageRepository.findByConversationOrderByCreatedAt(conversation, Pageable.unpaged())
@@ -181,15 +181,15 @@ class ChatSseIntegrationTest {
             .expectBody(StreamStatusResponse::class.java)
             .isEqualTo(StreamStatusResponse(generating = false))
 
-        redisService.markGenerating(conversationId)
-        redisService.updateGeneratingProgress(conversationId, "Hello wor")
+        generatingStatusService.markGenerating(conversationId)
+        generatingStatusService.updateGeneratingProgress(conversationId, "Hello wor")
 
         webTestClient.get().uri(statusUri).exchange()
             .expectStatus().isOk
             .expectBody(StreamStatusResponse::class.java)
             .isEqualTo(StreamStatusResponse(generating = true, partial = "Hello wor"))
 
-        redisService.clearGenerating(conversationId)
+        generatingStatusService.clearGenerating(conversationId)
 
         webTestClient.get().uri(statusUri).exchange()
             .expectStatus().isOk

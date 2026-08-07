@@ -8,7 +8,7 @@ import org.timpeng.chatbot.conversation.ConversationService
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.llm.StreamCancelledException
-import org.timpeng.chatbot.redis.RedisService
+import org.timpeng.chatbot.redis.GeneratingStatusService
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -18,7 +18,7 @@ private const val PROGRESS_FLUSH_INTERVAL_MS = 400L
 class ChatService(
     private val conversationService: ConversationService,
     private val llmProvider: LlmProvider,
-    private val redisService: RedisService,
+    private val generatingStatusService: GeneratingStatusService,
 ) {
 
     private val logger = LoggerFactory.getLogger(ChatService::class.java)
@@ -61,7 +61,7 @@ class ChatService(
         // request thread: the servlet thread is freed immediately after saveUserMessage, and the
         // onTimeout/onError callbacks above are driven by the container's own async listener
         // rather than only firing when a write happens to fail.
-        redisService.markGenerating(conversationId)
+        generatingStatusService.markGenerating(conversationId)
 
         CompletableFuture.runAsync {
             val fullResponse = StringBuilder()
@@ -77,7 +77,7 @@ class ChatService(
                     // chunks per second and every write costs a round-trip to Redis.
                     val now = System.currentTimeMillis()
                     if (now - lastFlushAt >= PROGRESS_FLUSH_INTERVAL_MS) {
-                        redisService.updateGeneratingProgress(conversationId, fullResponse.toString())
+                        generatingStatusService.updateGeneratingProgress(conversationId, fullResponse.toString())
                         lastFlushAt = now
                     }
                 }
@@ -106,13 +106,13 @@ class ChatService(
                     emitter.completeWithError(e)
                 }
             } finally {
-                redisService.clearGenerating(conversationId)
+                generatingStatusService.clearGenerating(conversationId)
             }
         }
     }
 
     fun streamStatus(conversationId: String): StreamStatusResponse {
-        val partial = redisService.getGeneratingProgress(conversationId)
+        val partial = generatingStatusService.getGeneratingProgress(conversationId)
         return if (partial != null) StreamStatusResponse(generating = true, partial = partial)
         else StreamStatusResponse(generating = false)
     }

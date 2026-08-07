@@ -12,15 +12,15 @@ import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmResponse
-import org.timpeng.chatbot.redis.RedisService
-import java.util.Optional
+import org.timpeng.chatbot.redis.ConversationCacheService
+import java.util.*
 import kotlin.test.assertEquals
 
 class ConversationServiceTest {
     private val conversationHistoryService: ConversationHistoryService = mockk()
     private val conversationRepository: ConversationRepository = mockk()
     private val messageRepository: MessageRepository = mockk()
-    private val redisService: RedisService = mockk()
+    private val conversationCacheService: ConversationCacheService = mockk()
 
     private lateinit var conversationService: ConversationService
 
@@ -29,7 +29,7 @@ class ConversationServiceTest {
 
     @BeforeEach
     fun setUp() {
-        conversationService = ConversationService(conversationRepository, messageRepository, redisService, conversationHistoryService)
+        conversationService = ConversationService(conversationRepository, messageRepository, conversationCacheService, conversationHistoryService)
     }
 
     // saveMessage
@@ -39,7 +39,7 @@ class ConversationServiceTest {
         val slot = slot<Message>()
         every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
         every { messageRepository.save(capture(slot)) } answers { slot.captured }
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
 
         val result = conversationService.saveMessage(conversationId, Role.USER, "Hello")
 
@@ -54,17 +54,17 @@ class ConversationServiceTest {
         // no Spring transaction is bound in this unit test, so the cache write happens inline
         every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
         every { messageRepository.save(any()) } answers { firstArg() }
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
 
         conversationService.saveMessage(conversationId, Role.USER, "Hello")
 
-        verify { redisService.saveChatMessage(conversationId, match { it.content == "Hello" }) }
+        verify { conversationCacheService.saveChatMessage(conversationId, match { it.content == "Hello" }) }
     }
 
     @Test
     fun `saveMessage saves assistant message correctly`() {
         every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
         every { messageRepository.save(any()) } answers { firstArg() }
 
         val result = conversationService.saveMessage(conversationId, Role.ASSISTANT, "How can I help?")
@@ -90,7 +90,7 @@ class ConversationServiceTest {
         every { conversationHistoryService.getHistory(conversationId) } returns history
         every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
         every { messageRepository.save(any()) } answers { firstArg() }
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
 
         val result = conversationService.saveUserMessage(conversationId, "Hello")
 
@@ -105,7 +105,7 @@ class ConversationServiceTest {
         val llmResponse = LlmResponse(message = "Hi!", model = "gemini-3-flash-preview", latencyMs = 42L)
         every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
         every { messageRepository.save(any()) } answers { firstArg() }
-        every { redisService.saveChatMessage(conversationId, any()) } returns Unit
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
 
         val result = conversationService.saveAssistantMessage(conversationId, llmResponse)
 

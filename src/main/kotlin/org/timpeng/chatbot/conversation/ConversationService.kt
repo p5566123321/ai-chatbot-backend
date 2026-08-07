@@ -9,7 +9,7 @@ import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmResponse
-import org.timpeng.chatbot.redis.RedisService
+import org.timpeng.chatbot.redis.ConversationCacheService
 import java.util.UUID
 
 
@@ -17,7 +17,7 @@ import java.util.UUID
 class ConversationService (
     private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
-    private val redisService: RedisService,
+    private val conversationCacheService: ConversationCacheService,
     private val historyService: ConversationHistoryService,
 ) {
 
@@ -40,11 +40,11 @@ class ConversationService (
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
                 override fun afterCommit() {
-                    redisService.saveChatMessage(conversationId, message)
+                    conversationCacheService.saveChatMessage(conversationId, message)
                 }
             })
         } else {
-            redisService.saveChatMessage(conversationId, message)
+            conversationCacheService.saveChatMessage(conversationId, message)
         }
     }
 

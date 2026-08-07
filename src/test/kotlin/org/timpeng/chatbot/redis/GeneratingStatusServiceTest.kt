@@ -9,17 +9,15 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.data.redis.core.StringRedisTemplate
 import org.springframework.data.redis.core.ValueOperations
-import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-class RedisServiceTest {
+class GeneratingStatusServiceTest {
 
     private val redisTemplate: StringRedisTemplate = mockk()
     private val valueOps: ValueOperations<String, String> = mockk()
-    private val objectMapper = ObjectMapper()
-    private lateinit var redisService: RedisService
+    private lateinit var generatingStatusService: GeneratingStatusService
 
     private val conversationId = "test-uuid"
     private val key = "chat:generating:$conversationId"
@@ -27,14 +25,14 @@ class RedisServiceTest {
     @BeforeEach
     fun setUp() {
         every { redisTemplate.opsForValue() } returns valueOps
-        redisService = RedisService(redisTemplate, objectMapper)
+        generatingStatusService = GeneratingStatusService(redisTemplate)
     }
 
     @Test
     fun `markGenerating sets an empty placeholder with a TTL`() {
         every { valueOps.set(any(), any(), any<Duration>()) } just Runs
 
-        redisService.markGenerating(conversationId)
+        generatingStatusService.markGenerating(conversationId)
 
         verify { valueOps.set(key, "", any<Duration>()) }
     }
@@ -43,7 +41,7 @@ class RedisServiceTest {
     fun `updateGeneratingProgress overwrites the partial text`() {
         every { valueOps.set(any(), any(), any<Duration>()) } just Runs
 
-        redisService.updateGeneratingProgress(conversationId, "Hello wor")
+        generatingStatusService.updateGeneratingProgress(conversationId, "Hello wor")
 
         verify { valueOps.set(key, "Hello wor", any<Duration>()) }
     }
@@ -52,7 +50,7 @@ class RedisServiceTest {
     fun `clearGenerating deletes the key`() {
         every { redisTemplate.delete(any<String>()) } returns true
 
-        redisService.clearGenerating(conversationId)
+        generatingStatusService.clearGenerating(conversationId)
 
         verify { redisTemplate.delete(key) }
     }
@@ -61,13 +59,13 @@ class RedisServiceTest {
     fun `getGeneratingProgress returns the stored partial text`() {
         every { valueOps.get(key) } returns "partial"
 
-        assertEquals("partial", redisService.getGeneratingProgress(conversationId))
+        assertEquals("partial", generatingStatusService.getGeneratingProgress(conversationId))
     }
 
     @Test
     fun `getGeneratingProgress returns null when nothing is in flight`() {
         every { valueOps.get(key) } returns null
 
-        assertNull(redisService.getGeneratingProgress(conversationId))
+        assertNull(generatingStatusService.getGeneratingProgress(conversationId))
     }
 }
