@@ -1,0 +1,12 @@
+global:
+  # Benchmark runs are short (a few minutes); scrape often so k6's run window has enough samples.
+  scrape_interval: 2s
+
+scrape_configs:
+  - job_name: chatbot
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # The port below is filled in by scripts/render-prometheus-config.sh from SERVER_PORT in
+      # .env — the app runs on the host (IntelliJ/bootRun), not in this compose file, and
+      # Prometheus's own config format has no env-var substitution of its own.
+      - targets: ["host.docker.internal:__APP_PORT__"]

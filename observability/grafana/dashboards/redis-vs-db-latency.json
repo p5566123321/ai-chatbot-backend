@@ -1,0 +1,100 @@
+{
+  "title": "Redis vs DB — Conversation History Latency",
+  "uid": "redis-vs-db-latency",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "getHistory latency: Redis hit vs DB fallback (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "history_cache_time_seconds{result=\"hit\", quantile=\"0.5\"}",
+          "legendFormat": "redis hit p50"
+        },
+        {
+          "expr": "history_cache_time_seconds{result=\"hit\", quantile=\"0.95\"}",
+          "legendFormat": "redis hit p95"
+        },
+        {
+          "expr": "history_cache_time_seconds{result=\"hit\", quantile=\"0.99\"}",
+          "legendFormat": "redis hit p99"
+        },
+        {
+          "expr": "history_db_fallback_time_seconds{quantile=\"0.5\"}",
+          "legendFormat": "db fallback p50"
+        },
+        {
+          "expr": "history_db_fallback_time_seconds{quantile=\"0.95\"}",
+          "legendFormat": "db fallback p95"
+        },
+        {
+          "expr": "history_db_fallback_time_seconds{quantile=\"0.99\"}",
+          "legendFormat": "db fallback p99"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "getHistory calls/sec by result (cache hit ratio)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(history_cache_time_seconds_count[1m]))",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "DB queries/sec (history.db.fallback)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (cacheEnabled) (rate(history_db_fallback_time_seconds_count[1m]))",
+          "legendFormat": "cacheEnabled={{cacheEnabled}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "HikariCP active connections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "hikaricp_connections_active",
+          "legendFormat": "active"
+        },
+        {
+          "expr": "hikaricp_connections_pending",
+          "legendFormat": "pending"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "JVM / process CPU (sanity check while load-testing)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "process_cpu_usage",
+          "legendFormat": "process cpu"
+        }
+      ]
+    }
+  ]
+}

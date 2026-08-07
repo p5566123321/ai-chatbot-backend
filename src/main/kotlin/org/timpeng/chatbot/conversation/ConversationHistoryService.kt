@@ -18,6 +18,10 @@ class ConversationHistoryService (
     private val messageRepository: MessageRepository,
     private val redisService: RedisService,
     private val meterRegistry: MeterRegistry,
+    // Benchmark switch: set app.conversation.cache.enabled=false to force every request through
+    // the database, so the same load-test traffic can be replayed with and without Redis to
+    // produce a like-for-like latency comparison. See docs/decision for the benchmark methodology.
+    @Value($$"${app.conversation.cache.enabled:true}") private val cacheEnabled: Boolean = true,
 ) {
 
     @Value($$"${app.conversation.cache.max-msg}")
@@ -27,17 +31,20 @@ class ConversationHistoryService (
 
     fun getHistory(conversationId : String): List<Message> {
         val cacheSample = Timer.start(meterRegistry)
-        var messages = redisService.getChatHistory(conversationId)
+        var messages = if (cacheEnabled) redisService.getChatHistory(conversationId) else emptyList()
         val cacheHit = messages.isNotEmpty()
         val durationNanos = cacheSample.stop(
             Timer.builder("history.cache.time")
                 .description("讀取聊天記錄快取耗時")
-                .tag("result", if (cacheHit) "hit" else "miss")
+                .tag("result", if (!cacheEnabled) "disabled" else if (cacheHit) "hit" else "miss")
                 .publishPercentiles(0.5, 0.95, 0.99)
                 .register(meterRegistry)
         )
         val durationSec: Double = durationNanos / 1000000000.0
-        logger.info("[Redis] historyDelay=${durationSec}Sec")
+        // When cacheEnabled=false, redisService is never called — this duration is just the
+        // cost of the branch itself, not a Redis round-trip. Label it so benchmark logs aren't
+        // misread as "Redis" latency when the cache is actually turned off.
+        logger.info("[${if (cacheEnabled) "Redis" else "Cache-disabled"}] historyDelay=${durationSec}Sec")
 
         if(!cacheHit){
             val dbSample = Timer.start(meterRegistry)
@@ -49,6 +56,7 @@ class ConversationHistoryService (
             val durationNanos = dbSample.stop(
                 Timer.builder("history.db.fallback.time")
                     .description("快取未命中時查詢資料庫耗時")
+                    .tag("cacheEnabled", cacheEnabled.toString())
                     .publishPercentiles(0.5, 0.95, 0.99)
                     .register(meterRegistry)
             )
@@ -56,9 +64,9 @@ class ConversationHistoryService (
             val durationSec: Double = durationNanos / 1000000000.0
             logger.info("[DB] historyDelay=${durationSec}Sec")
 
-
-            redisService.saveChatMessageList(conversationId, messages)
-
+            if (cacheEnabled) {
+                redisService.saveChatMessageList(conversationId, messages)
+            }
         }
 
         logger.info("[History] conversationId=$conversationId length=${messages.size} ")

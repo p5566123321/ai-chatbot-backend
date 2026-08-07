@@ -40,3 +40,7 @@ out/
 .kotlin
 
 .env
+
+### Benchmark (generated) ###
+observability/prometheus/prometheus.yml
+benchmark/conversation-ids.txt

@@ -36,5 +36,6 @@ app:
     timeout-ms: ${SSE_TIMEOUT_MS:60000}
   conversation:
     cache:
+      enabled: ${CONVERSATION_CACHE_ENABLED:true}
       ttl-min: 30
       max-msg: 10

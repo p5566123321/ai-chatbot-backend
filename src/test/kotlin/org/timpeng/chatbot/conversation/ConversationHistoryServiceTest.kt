@@ -75,4 +75,26 @@ class ConversationHistoryServiceTest {
         }
         verify(exactly = 0) { conversationRepository.save(any()) }
     }
+
+    @Test
+    fun `getHistory skips redis entirely when cache is disabled, for a pure-DB latency baseline`() {
+        val disabledService = ConversationHistoryService(
+            conversationRepository,
+            messageRepository,
+            redisService,
+            SimpleMeterRegistry(),
+            cacheEnabled = false,
+        )
+        val chronological = listOf(
+            Message(id = 1L, conversation = conversation, role = Role.USER, content = "Hello"),
+        )
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.findByConversationOrderByCreatedAt(conversation, any()) } returns chronological
+
+        val result = disabledService.getHistory(conversationId)
+
+        assertEquals(chronological, result)
+        verify(exactly = 0) { redisService.getChatHistory(any()) }
+        verify(exactly = 0) { redisService.saveChatMessageList(any(), any()) }
+    }
 }
