@@ -100,7 +100,26 @@ implementations.
 
 | Item | Description |
 |---|---|
-| Migrate `streamChat` onto the queue | Replace `ChatService.streamChat`'s `CompletableFuture.runAsync` dispatch with `queue.enqueue(...)` + a `JobHandler`, reusing the existing `RedisService.markGenerating`/`updateGeneratingProgress` mechanism to deliver results back to the SSE connection. The natural next use of this infrastructure. |
+| ~~Migrate `streamChat` onto the queue~~ | **Done.** `ChatService.streamChat` now enqueues a `ChatJobPayload`; `ChatJobHandler` + `ChatQueueConfig` (`src/main/kotlin/org/timpeng/chatbot/chat/`) do the actual `streamGenerate` call and deliver results back to the SSE connection. See the "Emitter delivery" addendum below for how. |
 | Exponential backoff on retry | Delay reclaim eligibility based on attempt count instead of a fixed idle threshold. |
 | DLQ inspection tooling | Currently: `XRANGE {stream}:dlq - +` by hand. An admin endpoint or scheduled alert once there's an actual DLQ with real traffic worth watching. |
 | Kafka/RabbitMQ adapter | New class implementing `JobQueue<T>` + a consumer wired the same way — if/when scale or ops requirements justify a dedicated broker. |
+
+## Addendum: emitter delivery (streamChat migration)
+
+An `SseEmitter` can't be serialized into a job payload, so `ChatJobPayload` carries only
+`conversationId`; `ChatJobHandler` needs another way to find the connection the controller thread
+created. Decision: **`SseEmitterRegistry`, an in-process `ConcurrentHashMap<conversationId,
+SseEmitter>`**, populated by `ChatService.streamChat` before enqueue and read by `ChatJobHandler`
+on delivery.
+
+This is explicitly a single-instance-only mechanism — it only works because the producer
+(controller thread) and consumer (`RedisStreamConsumer`'s daemon thread) are always the same JVM,
+which was already this ADR's "known limitation" for the consumer thread itself, so it isn't a new
+constraint, just the same one applied to emitter delivery too. **When this app is horizontally
+scaled, the chosen path is Redis Pub/Sub**, not a redesign of `JobQueue`/`JobHandler`: each node
+subscribes to a channel per `conversationId` it's currently holding an open SSE connection for,
+and `ChatJobHandler` publishes chunks to that channel instead of writing straight into a local
+`SseEmitter` — a node other than the one that enqueued the job could then pick up the delivery.
+Not built now because it isn't needed at single-instance scale and would add a second Redis
+subscription mechanism (on top of the Streams consumer group) for no current benefit.

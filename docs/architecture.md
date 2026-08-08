@@ -153,10 +153,20 @@ The port and Redis Streams adapter are built
 hand-rolled attempt tracking) and a `{stream}:dlq` dead-letter stream for jobs that exhaust
 `app.queue.max-attempts`.
 
-**Not yet wired to any call site.** `ChatService.streamChat` still dispatches the Gemini call via
-`CompletableFuture.runAsync` directly — migrating it onto `JobQueue`/`JobHandler` is the next
-step (tracked in ADR-006's "Future considerations"), deferred because that dispatch path was just
-hardened for resilient SSE reconnect/resume and deserves its own focused change.
+**Wired up for chat.** `ChatService.streamChat` enqueues a `ChatJobPayload` (just the
+`conversationId`) instead of dispatching the Gemini call itself; `ChatJobHandler`
+(`src/main/kotlin/org/timpeng/chatbot/chat/`), driven by a `RedisStreamConsumer` bean wired in
+`ChatQueueConfig`, does the actual `streamGenerate` call and writes chunks back to the client's
+`SseEmitter`. Since the emitter itself can't travel through a Redis Stream payload,
+`SseEmitterRegistry` — an in-process `conversationId -> SseEmitter` `ConcurrentHashMap` — is how
+the consumer thread finds its way back to the connection the controller thread created. This only
+works because producer and consumer are the same JVM (true today, single instance); the chosen
+path for horizontal scaling is to swap this registry for Redis Pub/Sub — each node subscribes to
+the conversationIds it holds a live connection for — rather than changing `JobQueue`/`JobHandler`
+themselves. `ChatJobHandler` deliberately never rethrows to trigger the queue's own retry: replaying
+`streamGenerate` against an emitter that already sent partial chunks would duplicate/corrupt
+output, so every failure mode (LLM error, disconnected client) is still handled terminally inside
+the handler, same as before this used the queue.
 
 ## Use Cases
 

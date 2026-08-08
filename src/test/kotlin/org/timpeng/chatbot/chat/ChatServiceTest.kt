@@ -2,6 +2,7 @@ package org.timpeng.chatbot.chat
 
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import io.mockk.verifyOrder
 import org.junit.jupiter.api.BeforeEach
@@ -14,15 +15,24 @@ import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.llm.LlmResponse
+import org.timpeng.chatbot.queue.JobQueue
 import org.timpeng.chatbot.redis.GeneratingStatusService
-import java.io.IOException
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
+// Covers ChatService.chat (unchanged) plus streamChat's producer-side responsibilities: 404
+// before any async work, registering the emitter/cancellation flag, enqueueing the job, and
+// wiring the SSE lifecycle callbacks. The actual streaming/LLM/persistence behavior that used to
+// live in streamChat's async block now belongs to ChatJobHandler - see ChatJobHandlerTest.
 class ChatServiceTest {
 
     private val conversationService: ConversationService = mockk()
     private val llmProvider: LlmProvider = mockk()
     private val generatingStatusService: GeneratingStatusService = mockk(relaxed = true)
+    private val emitterRegistry = SseEmitterRegistry()
+    private val chatJobQueue: JobQueue<ChatJobPayload> = mockk(relaxed = true)
     private lateinit var chatService: ChatService
     private val emitter: SseEmitter = mockk(relaxed = true)
 
@@ -34,14 +44,17 @@ class ChatServiceTest {
 
     @BeforeEach
     fun setUp() {
-        chatService = ChatService(conversationService, llmProvider, generatingStatusService)
+        chatService = ChatService(
+            conversationService,
+            llmProvider,
+            generatingStatusService,
+            emitterRegistry,
+            chatJobQueue,
+        )
     }
 
     private fun userMessage(content: String) =
         Message(id = 2L, conversation = conversation, role = Role.USER, content = content)
-
-    private fun assistantMessage(content: String) =
-        Message(id = 3L, conversation = conversation, role = Role.ASSISTANT, content = content)
 
     @Test
     fun `chat returns response with llm message, model, and latency`() {
@@ -148,131 +161,67 @@ class ChatServiceTest {
     }
 
     @Test
-    fun `stream response should send each chunk as SEE event`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
-            listOf("this", "is", "test", "response").forEach(onChunk)
-        }
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
-            assistantMessage("this is test response")
+    fun `streamChat saves the user message synchronously before enqueueing`() {
+        every { conversationService.saveUserMessage(conversationId, "hello") } returns
+            history + userMessage("hello")
 
         chatService.streamChat(conversationId, "hello", emitter)
 
-        verify(timeout = 2000) { emitter.complete() }
-        verify(exactly = 4){ emitter.send(any<SseEmitter.SseEventBuilder>()) }
-    }
-
-    @Test
-    fun `streamResponse should complete emitter after all chunks sent`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
-            listOf("this", "is", "test", "response").forEach(onChunk)
-        }
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
-            assistantMessage("this is test response")
-
-        chatService.streamChat(conversationId, "hello", emitter)
-
-        verify(timeout = 2000) { emitter.complete() }
-    }
-
-    @Test
-    fun `streamResponse sends an error event and completes gracefully when llmProvider throws`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } throws RuntimeException("LLM unavailable")
-        chatService.streamChat(conversationId, "hello", emitter)
-
-        // The client can already be told about the failure via the error event's payload, so a
-        // successful send lets us close cleanly instead of aborting the connection.
-        verify(timeout = 2000) { emitter.complete() }
-        verify {
-            emitter.send(match<SseEmitter.SseEventBuilder> {
-                it.build().any { d -> d.data == "LLM unavailable" }
-            })
-        }
-        verify(exactly = 0) { emitter.completeWithError(any()) }
-    }
-
-    @Test
-    fun `should send chunk values`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
-            listOf("A", "B", "C").forEach(onChunk)
-        }
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
-            assistantMessage("ABC")
-
-        chatService.streamChat(conversationId, "hello", emitter)
-
-        verify(timeout = 2000) { emitter.complete() }
-        verifyOrder{
-            emitter.send(match<SseEmitter.SseEventBuilder> { it.build().any { d -> d.data == "A" } })
-            emitter.send(match<SseEmitter.SseEventBuilder> { it.build().any { d -> d.data == "B" } })
-            emitter.send(match<SseEmitter.SseEventBuilder> { it.build().any { d -> d.data == "C" } })
-            emitter.complete()
+        verifyOrder {
+            conversationService.saveUserMessage(conversationId, "hello")
+            chatJobQueue.enqueue(ChatJobPayload(conversationId))
         }
     }
 
     @Test
-    fun `should stop and complete with error if emitter throws IOException`(){
-        val messagesWithUser = history + userMessage("Hello")
+    fun `streamChat propagates ConversationNotFoundException before touching the queue`() {
+        every { conversationService.saveUserMessage(conversationId, "hello") } throws
+            RuntimeException("Conversation not found: $conversationId")
 
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
-            listOf("A", "B", "C").forEach(onChunk)
+        assertThrows<RuntimeException> {
+            chatService.streamChat(conversationId, "hello", emitter)
         }
-        every { emitter.send(any<SseEmitter.SseEventBuilder>()) } throws IOException("client disconnected")
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
-            assistantMessage("A")
 
-        chatService.streamChat(conversationId, "hello", emitter)
-
-        verify(timeout = 2000) { emitter.completeWithError(any<IOException>()) }
+        verify(exactly = 0) { chatJobQueue.enqueue(any()) }
     }
 
     @Test
-    fun `streamChat marks generating before dispatch and clears it after a successful finish`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
-            listOf("this", "is", "test").forEach(onChunk)
-        }
-        every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
-            assistantMessage("this is test")
+    fun `streamChat marks generating and enqueues a job carrying the conversationId`() {
+        every { conversationService.saveUserMessage(conversationId, "hello") } returns
+            history + userMessage("hello")
 
         chatService.streamChat(conversationId, "hello", emitter)
 
-        // markGenerating happens synchronously before the async dispatch, clearGenerating only
-        // once the background work is done — waiting on emitter.complete() also waits for that.
         verify { generatingStatusService.markGenerating(conversationId) }
-        verify(timeout = 2000) { emitter.complete() }
-        verify(timeout = 2000) { generatingStatusService.clearGenerating(conversationId) }
+        verify { chatJobQueue.enqueue(ChatJobPayload(conversationId)) }
     }
 
     @Test
-    fun `streamChat clears generating status even when llmProvider throws`(){
-        val messagesWithUser = history + userMessage("Hello")
-
-        every { conversationService.saveUserMessage(conversationId, "hello") } returns messagesWithUser
-        every { llmProvider.streamGenerate(messagesWithUser, any()) } throws RuntimeException("LLM unavailable")
+    fun `streamChat registers the emitter under the conversationId`() {
+        every { conversationService.saveUserMessage(conversationId, "hello") } returns
+            history + userMessage("hello")
 
         chatService.streamChat(conversationId, "hello", emitter)
 
-        verify(timeout = 2000) { generatingStatusService.clearGenerating(conversationId) }
+        val handle = emitterRegistry.get(conversationId)
+        assertSame(emitter, handle?.emitter)
+        assertTrue(handle?.cancelled?.get() == false)
+    }
+
+    @Test
+    fun `streamChat flips the cancelled flag and deregisters on emitter completion`() {
+        every { conversationService.saveUserMessage(conversationId, "hello") } returns
+            history + userMessage("hello")
+        val onCompletionSlot = slot<Runnable>()
+        every { emitter.onCompletion(capture(onCompletionSlot)) } returns Unit
+
+        chatService.streamChat(conversationId, "hello", emitter)
+        val handle = emitterRegistry.get(conversationId)!!
+
+        onCompletionSlot.captured.run()
+
+        assertTrue(handle.cancelled.get())
+        assertNull(emitterRegistry.get(conversationId))
     }
 
     @Test
@@ -292,5 +241,4 @@ class ChatServiceTest {
 
         assertEquals(StreamStatusResponse(generating = false), result)
     }
-
 }

@@ -97,13 +97,27 @@ write path that touches both Postgres and Redis.
 ### Streaming chat
 
 `ChatService.streamChat` validates the conversation and saves the user message synchronously (so
-an unknown `conversationId` still surfaces as a normal 404 before any async work starts), then
-runs the actual Gemini streaming call in `CompletableFuture.runAsync` off the servlet thread.
+an unknown `conversationId` still surfaces as a normal 404 before any async work starts), registers
+the `SseEmitter` in `SseEmitterRegistry` keyed by `conversationId`, then enqueues a `ChatJobPayload`
+onto the chat job queue (`ChatQueueConfig`, `org.timpeng.chatbot.queue`'s Redis Streams
+`JobQueue`/`RedisStreamConsumer` — see `docs/decision/006-queue-technology-selection.md`) instead
+of running the Gemini call itself. `ChatJobHandler`, driven by `RedisStreamConsumer`'s own daemon
+thread, does the actual `streamGenerate` call: it re-derives the message history from
+`conversationId` alone (a Redis cache hit, since the user message was already saved+cached before
+enqueue — the job payload deliberately carries no message data), looks the emitter back up via
+`SseEmitterRegistry`, and streams chunks to it. `SseEmitterRegistry` is a plain in-process
+`ConcurrentHashMap` — this only works because producer and consumer are the same JVM, true today
+(single instance); horizontally scaling would need Redis Pub/Sub instead (each node subscribes to
+the conversationIds it holds a live connection for) rather than a direct map lookup.
+
 While a stream is in flight, `GeneratingStatusService.markGenerating`/`updateGeneratingProgress`
 (throttled to every `PROGRESS_FLUSH_INTERVAL_MS`) let a disconnected/reconnecting client poll
 `GET .../messages/stream/status` for partial progress instead of needing to hold the SSE
 connection open. On cancellation or failure mid-stream, the partial response is persisted with a
-`[回覆中斷]` marker rather than discarded.
+`[回覆中斷]` marker rather than discarded — `ChatJobHandler` never rethrows to trigger the queue's
+own retry, since replaying `streamGenerate` against an emitter that already sent partial chunks
+would duplicate/corrupt output rather than recover anything; every failure mode is handled
+terminally inside the handler instead.
 
 ### LLM provider abstraction
 

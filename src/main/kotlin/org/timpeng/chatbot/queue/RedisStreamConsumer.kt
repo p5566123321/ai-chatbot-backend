@@ -23,6 +23,7 @@ private const val REASON_FIELD = "reason"
 private const val ATTEMPT_FIELD = "attempt"
 private const val FAILED_AT_FIELD = "failedAt"
 private const val RECLAIM_BATCH_SIZE = 10L
+private const val LOOP_ERROR_BACKOFF_MS = 1000L
 private const val READ_BATCH_SIZE = 10L
 
 /**
@@ -92,6 +93,13 @@ class RedisStreamConsumer<T : Any>(
                 readAndProcessNew()
             } catch (e: Exception) {
                 logger.error("Queue consumer loop error for stream=$streamKey", e)
+                // readAndProcessNew()'s own XREADGROUP call blocks for blockTimeoutMs and so
+                // naturally throttles the loop on the happy path, but a failure in
+                // reclaimStuckEntries() (e.g. Redis unreachable, or - observed in practice - a
+                // shutdown race where the connection factory bean stops before this consumer's
+                // own destroy() gets to set running=false) skips straight past that and would
+                // otherwise spin as fast as the JVM can throw, burning CPU and flooding logs.
+                runCatching { Thread.sleep(LOOP_ERROR_BACKOFF_MS) }
             }
         }
     }
