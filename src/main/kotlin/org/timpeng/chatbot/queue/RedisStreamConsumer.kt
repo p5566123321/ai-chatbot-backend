@@ -25,6 +25,22 @@ private const val FAILED_AT_FIELD = "failedAt"
 private const val RECLAIM_BATCH_SIZE = 10L
 private const val LOOP_ERROR_BACKOFF_MS = 1000L
 private const val READ_BATCH_SIZE = 10L
+private const val MAX_RECLAIM_BACKOFF_MS = 600_000L // 10 min safety cap regardless of attempt count
+
+/**
+ * Idle threshold a pending entry must sit past before it's eligible for reclaim, doubling per
+ * prior delivery instead of a fixed [baseMs] every time — see ADR-006's "Future considerations"
+ * (exponential backoff on retry). [deliveryCount] is Redis's own per-message delivery count (1
+ * on first delivery), so the very first window is exactly [baseMs], unchanged from before this
+ * existed; it only grows on redelivery. Top-level and `internal` (rather than a private method
+ * on [RedisStreamConsumer]) purely so it's unit-testable as a pure function without standing up
+ * a consumer against real Redis.
+ */
+internal fun reclaimBackoffMs(baseMs: Long, deliveryCount: Long): Long {
+    val exponent = (deliveryCount - 1).coerceIn(0, 30)
+    val multiplier = 1L shl exponent.toInt()
+    return (baseMs * multiplier).coerceAtMost(MAX_RECLAIM_BACKOFF_MS)
+}
 
 /**
  * Redis Streams consumer-group loop for a single [JobHandler]. Owns a daemon thread: reclaims
@@ -32,6 +48,8 @@ private const val READ_BATCH_SIZE = 10L
  * then blocks on XREADGROUP for new work. Retries up to [maxAttempts] using Redis's own
  * per-message delivery count (no hand-rolled attempt counter in the payload); jobs that exhaust
  * retries are moved to a companion "{streamKey}:dlq" stream instead of being silently dropped.
+ * The idle threshold before a retry becomes reclaim-eligible doubles per prior delivery (see
+ * [reclaimBackoffMs]) rather than staying fixed at [reclaimIdleMs] every time.
  *
  * See docs/decision/006-queue-technology-selection.md for why this shape (per-message ack,
  * consumer groups) was chosen — it minimizes, but doesn't eliminate, the rework a future swap to
@@ -111,13 +129,19 @@ class RedisStreamConsumer<T : Any>(
         // shadow the Kotlin stdlib ones (returning Streamable, not List) — materialize to a
         // plain List first via the iterator so the rest of this is unambiguous Kotlin.
         val pendingList = pending.iterator().asSequence().toList()
-        val stale = pendingList.filter { it.elapsedTimeSinceLastDelivery >= Duration.ofMillis(reclaimIdleMs) }
+        val stale = pendingList.filter {
+            it.elapsedTimeSinceLastDelivery >= Duration.ofMillis(reclaimBackoffMs(reclaimIdleMs, it.totalDeliveryCount))
+        }
         if (stale.isEmpty()) return
 
         val claimed = ops.claim(
             streamKey,
             groupName,
             consumerName,
+            // reclaimIdleMs (not each id's own larger backoff window) is deliberate here: it's
+            // the smallest possible window (first delivery), so it never rejects an id the
+            // filter above already vetted against its own (equal-or-larger) backoff — this is
+            // just XCLAIM's own belt-and-suspenders idle check, not where backoff is enforced.
             XClaimOptions.minIdle(Duration.ofMillis(reclaimIdleMs)).ids(stale.map { it.idAsString }),
         )
         // `totalDeliveryCount` here is the count *before* the XCLAIM call below; XCLAIM itself

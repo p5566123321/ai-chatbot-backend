@@ -92,16 +92,17 @@ implementations.
   scaling will need either multiple consumers in the same Streams consumer group (already
   supported, just not exercised yet) or revisiting this — not a blocker now, flagged for whenever
   `docs/architecture.md`'s "Future Production Architecture" actually happens.
-- **No backoff/delay on retry** — a failed job is eligible for redelivery as soon as
-  `app.queue.reclaim-idle-ms` elapses, not with any exponential/jittered delay. Fine at today's
-  scale; listed below as future work rather than built speculatively.
+- **Backoff has no jitter.** Retry eligibility now doubles per prior delivery (see "Future
+  considerations" below), but it's deterministic — many jobs failing in the same window back off
+  in lockstep rather than spreading out. Not a real concern at today's traffic; would matter if a
+  large batch of jobs ever failed simultaneously and all reclaimed at the exact same moment.
 
 ## Future considerations
 
 | Item | Description |
 |---|---|
 | ~~Migrate `streamChat` onto the queue~~ | **Done.** `ChatService.streamChat` now enqueues a `ChatJobPayload`; `ChatJobHandler` + `ChatQueueConfig` (`src/main/kotlin/org/timpeng/chatbot/chat/`) do the actual `streamGenerate` call and deliver results back to the SSE connection. See the "Emitter delivery" addendum below for how. |
-| Exponential backoff on retry | Delay reclaim eligibility based on attempt count instead of a fixed idle threshold. |
+| ~~Exponential backoff on retry~~ | **Done.** `RedisStreamConsumer.reclaimStuckEntries` now computes each pending entry's reclaim-eligibility window via `reclaimBackoffMs(reclaimIdleMs, deliveryCount)` — doubles per prior delivery (Redis's own per-message delivery count), capped at 10 minutes. First delivery still uses the plain `reclaimIdleMs` value, so this is a behavior-preserving change for the common case. |
 | DLQ inspection tooling | Currently: `XRANGE {stream}:dlq - +` by hand. An admin endpoint or scheduled alert once there's an actual DLQ with real traffic worth watching. |
 | Kafka/RabbitMQ adapter | New class implementing `JobQueue<T>` + a consumer wired the same way — if/when scale or ops requirements justify a dedicated broker. |
 
