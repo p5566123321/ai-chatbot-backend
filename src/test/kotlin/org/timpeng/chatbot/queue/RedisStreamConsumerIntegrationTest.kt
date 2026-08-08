@@ -143,4 +143,48 @@ class RedisStreamConsumerIntegrationTest {
             consumer.destroy()
         }
     }
+
+    @Test
+    fun `consumer recreates a missing group and keeps processing after the stream is deleted externally`() {
+        val queue = RedisStreamJobQueue<TestJobPayload>(redisTemplate, objectMapper, meterRegistry, streamKey)
+        val received = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val consumer = RedisStreamConsumer(
+            redisTemplate, objectMapper, meterRegistry, streamKey,
+            groupName = "test-group", consumerName = "test-consumer-1",
+            payloadType = TestJobPayload::class.java,
+            handler = JobHandler { job -> received.add(job.payload.text) },
+            blockTimeoutMs = 300,
+        )
+
+        try {
+            consumer.start()
+            queue.enqueue(TestJobPayload("before"))
+
+            val deadline1 = System.currentTimeMillis() + 5_000
+            while (System.currentTimeMillis() < deadline1 && received.isEmpty()) Thread.sleep(100)
+            assertEquals(listOf("before"), received.toList(), "sanity check: consumer works before the stream is deleted")
+
+            // Simulate an external actor (ops mistake, maxmemory eviction, ...) deleting the
+            // stream key entirely while the consumer is still running - this also destroys the
+            // consumer group, since group metadata lives inside the stream's own data structure.
+            // This is exactly what caused the NOGROUP errors that led to intermittent
+            // ChatSseIntegrationTest timeouts during manual testing (repeatedly XADD/DEL-ing
+            // queue:chat by hand while a consumer was live).
+            redisTemplate.delete(streamKey)
+
+            // A fresh XADD recreates the stream key but NOT the consumer group - the consumer
+            // has to notice NOGROUP on its own and re-issue XGROUP CREATE to recover.
+            queue.enqueue(TestJobPayload("after"))
+
+            val deadline2 = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline2 && "after" !in received) Thread.sleep(100)
+
+            assertTrue(
+                "after" in received,
+                "consumer should self-heal and process jobs enqueued after the stream was deleted",
+            )
+        } finally {
+            consumer.destroy()
+        }
+    }
 }

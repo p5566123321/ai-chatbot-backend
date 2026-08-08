@@ -97,6 +97,15 @@ implementations.
   in lockstep rather than spreading out. Not a real concern at today's traffic; would matter if a
   large batch of jobs ever failed simultaneously and all reclaimed at the exact same moment.
 
+`RedisStreamConsumer` self-heals from a missing consumer group: if the underlying stream key is
+ever deleted while the consumer is running (a maxmemory eviction, an ops mistake running `DEL` by
+hand — this is exactly what caused a run of intermittent `ChatSseIntegrationTest` timeouts during
+manual testing, root-caused via the `NOGROUP No such key ... or consumer group ...` error in the
+logs), `runLoop` recognizes the `NOGROUP` error and re-issues `XGROUP CREATE` before its next
+iteration instead of erroring forever until the app is restarted. Covered by
+`RedisStreamConsumerIntegrationTest`'s "consumer recreates a missing group..." test, which deletes
+the stream key out from under a running consumer and asserts it keeps processing new jobs anyway.
+
 ## Future considerations
 
 | Item | Description |

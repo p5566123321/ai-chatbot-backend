@@ -112,7 +112,25 @@ class RedisStreamConsumer<T : Any>(
                 reclaimStuckEntries()
                 readAndProcessNew()
             } catch (e: Exception) {
-                logger.error("Queue consumer loop error for stream=$streamKey", e)
+                if (isMissingGroup(e)) {
+                    // NOGROUP: the stream and/or consumer group is gone - e.g. the stream key
+                    // was deleted externally (ops error, a maxmemory eviction, someone running
+                    // `DEL` by hand) while this consumer was still running. Without this, every
+                    // future loop iteration would hit the same NOGROUP error forever - the
+                    // consumer would need a full app restart to recover even after the stream
+                    // key exists again, since XADD alone recreates the stream but not the group.
+                    // ensureGroup() is idempotent (BUSYGROUP-tolerant) so recreating here is safe
+                    // even if another consumer instance in the same group wins the race first.
+                    logger.warn(
+                        "Consumer group $groupName on stream=$streamKey is missing (stream/group " +
+                            "deleted externally?) - recreating and resuming",
+                        e,
+                    )
+                    runCatching { ensureGroup() }
+                        .onFailure { logger.error("Failed to recreate consumer group $groupName on stream=$streamKey", it) }
+                } else {
+                    logger.error("Queue consumer loop error for stream=$streamKey", e)
+                }
                 // readAndProcessNew()'s own XREADGROUP call blocks for blockTimeoutMs and so
                 // naturally throttles the loop on the happy path, but a failure in
                 // reclaimStuckEntries() (e.g. Redis unreachable, or - observed in practice - a
@@ -123,6 +141,9 @@ class RedisStreamConsumer<T : Any>(
             }
         }
     }
+
+    private fun isMissingGroup(e: Throwable): Boolean =
+        e.message?.contains("NOGROUP") == true || e.cause?.message?.contains("NOGROUP") == true
 
     /** Re-claims entries some other (likely crashed) consumer never acked, and reprocesses them. */
     private fun reclaimStuckEntries() {
