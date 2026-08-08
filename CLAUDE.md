@@ -121,10 +121,21 @@ terminally inside the handler instead.
 
 ### LLM provider abstraction
 
-`LlmProvider` is the interface (`generate`, `streamGenerate`); `GeminiProvider` is the only
-implementation, gated by `@ConditionalOnProperty(app.llm.provider = "gemini")` so a new provider
-can be added as a sibling `@Service` without touching call sites. `Role.geminiName` maps the
-internal `USER/ASSISTANT/SYSTEM` enum to Gemini's `user/model` role strings.
+`LlmProvider` is the interface (`generate`, `streamGenerate`), each gated by
+`@ConditionalOnProperty(app.llm.provider = "...")` so a new implementation is a sibling `@Service`
+that doesn't touch call sites (though `LlmConfig`'s `@Bean llmProvider()` selector `when` block
+does need a new branch — it doesn't discover providers automatically). Two implementations exist:
+- `GeminiProvider` (`app.llm.provider=gemini`, the default) — the real thing.
+- `FakeLlmProvider` (`app.llm.provider=fake`, env `LLM_PROVIDER=fake`) — deterministic,
+  no-external-call responses for load-testing the queue pipeline in isolation from real LLM
+  latency/cost (mirrors why `k6-history-latency.js` avoids the chat endpoints entirely — Gemini's
+  multi-second latency would drown out whatever's actually being measured). Publishes the same
+  `llm.*` metrics as `GeminiProvider` (tagged `provider=fake`) so dashboards don't need separate
+  panels; chunk pacing is configurable via `app.llm.fake.chunk-delay-ms` (env
+  `FAKE_LLM_CHUNK_DELAY_MS`).
+
+`Role.geminiName` maps the internal `USER/ASSISTANT/SYSTEM` enum to Gemini's `user/model` role
+strings.
 
 ### Metrics
 

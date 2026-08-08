@@ -28,10 +28,14 @@ management:
         include: health,prometheus
 app:
   llm:
-    provider: gemini
+    # gemini (default) or fake — fake is a no-external-call LlmProvider for load-testing the
+    # queue pipeline without real LLM latency/cost, see FakeLlmProvider.
+    provider: ${LLM_PROVIDER:gemini}
     gemini:
       model: ${GEMINI_MODEL}
       timeout-ms: ${GEMINI_TIMEOUT_MS:30000}
+    fake:
+      chunk-delay-ms: ${FAKE_LLM_CHUNK_DELAY_MS:20}
   sse:
     timeout-ms: ${SSE_TIMEOUT_MS:60000}
   conversation:
