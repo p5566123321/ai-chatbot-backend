@@ -19,9 +19,11 @@ import tools.jackson.databind.ObjectMapper
 import java.time.Duration
 import java.time.Instant
 
-private const val REASON_FIELD = "reason"
-private const val ATTEMPT_FIELD = "attempt"
-private const val FAILED_AT_FIELD = "failedAt"
+// internal (not private) so DlqReader can read the same field names deadLetter() writes with,
+// rather than duplicating these string literals and risking the two sides drifting apart.
+internal const val REASON_FIELD = "reason"
+internal const val ATTEMPT_FIELD = "attempt"
+internal const val FAILED_AT_FIELD = "failedAt"
 private const val RECLAIM_BATCH_SIZE = 10L
 private const val LOOP_ERROR_BACKOFF_MS = 1000L
 private const val READ_BATCH_SIZE = 10L

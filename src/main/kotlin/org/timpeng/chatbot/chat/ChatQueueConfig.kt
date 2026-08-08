@@ -10,7 +10,9 @@ import org.timpeng.chatbot.queue.RedisStreamConsumer
 import org.timpeng.chatbot.queue.RedisStreamJobQueue
 import tools.jackson.databind.ObjectMapper
 
-private const val CHAT_STREAM_KEY = "queue:chat"
+// internal (not private) so ChatDlqController can point DlqReader at the same stream without
+// duplicating this literal.
+internal const val CHAT_STREAM_KEY = "queue:chat"
 private const val CHAT_GROUP_NAME = "chat-workers"
 
 /**

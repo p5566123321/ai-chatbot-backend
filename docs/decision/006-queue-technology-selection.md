@@ -103,7 +103,7 @@ implementations.
 |---|---|
 | ~~Migrate `streamChat` onto the queue~~ | **Done.** `ChatService.streamChat` now enqueues a `ChatJobPayload`; `ChatJobHandler` + `ChatQueueConfig` (`src/main/kotlin/org/timpeng/chatbot/chat/`) do the actual `streamGenerate` call and deliver results back to the SSE connection. See the "Emitter delivery" addendum below for how. |
 | ~~Exponential backoff on retry~~ | **Done.** `RedisStreamConsumer.reclaimStuckEntries` now computes each pending entry's reclaim-eligibility window via `reclaimBackoffMs(reclaimIdleMs, deliveryCount)` — doubles per prior delivery (Redis's own per-message delivery count), capped at 10 minutes. First delivery still uses the plain `reclaimIdleMs` value, so this is a behavior-preserving change for the common case. |
-| DLQ inspection tooling | Currently: `XRANGE {stream}:dlq - +` by hand. An admin endpoint or scheduled alert once there's an actual DLQ with real traffic worth watching. |
+| ~~DLQ inspection tooling~~ | **Partly done.** `GET /api/admin/queues/chat/dlq` (`ChatDlqController` + `DlqReader`, `src/main/kotlin/org/timpeng/chatbot/queue/DlqReader.kt`) lists recent dead-lettered entries and a total count, read-only, no auth (matches the app's current no-Spring-Security posture everywhere else). A scheduled alert on DLQ depth is still manual/not built. |
 | Kafka/RabbitMQ adapter | New class implementing `JobQueue<T>` + a consumer wired the same way — if/when scale or ops requirements justify a dedicated broker. |
 
 ## Addendum: emitter delivery (streamChat migration)
