@@ -120,20 +120,43 @@ Streaming improves:
 
 ## Architecture
 
+Decision: **Redis Streams** behind a `JobQueue<T>`/`JobHandler<T>` port, not BullMQ (Node-only,
+no JVM client) or a new broker service — see
+[ADR-006](decision/006-queue-technology-selection.md) for the full rationale and known
+limitations.
+
 ```text
-         ┌─────────────┐
-         │   Queue     │
-         │ BullMQ/Kafka│
-         └──────┬──────┘
-                │
-Client → API → Producer
-                │
-                ▼
-             Worker
-                │
-                ▼
-          LLM Provider
+         ┌────────────────────────┐
+         │      Redis Stream      │
+         │ (consumer group, XACK/ │
+         │  XCLAIM reclaim, DLQ)  │
+         └────────────┬───────────┘
+                       │
+Client → API → JobQueue.enqueue()
+                       │
+                       ▼
+           RedisStreamConsumer
+          (in-process daemon thread)
+                       │
+                       ▼
+                JobHandler<T>
+                       │
+                       ▼
+                 LLM Provider
 ```
+
+## Implementation status
+
+The port and Redis Streams adapter are built
+(`src/main/kotlin/org/timpeng/chatbot/queue/`: `Job.kt`, `RedisStreamJobQueue.kt`,
+`RedisStreamConsumer.kt`), with consumer-group-based retry (Redis's own delivery count, no
+hand-rolled attempt tracking) and a `{stream}:dlq` dead-letter stream for jobs that exhaust
+`app.queue.max-attempts`.
+
+**Not yet wired to any call site.** `ChatService.streamChat` still dispatches the Gemini call via
+`CompletableFuture.runAsync` directly — migrating it onto `JobQueue`/`JobHandler` is the next
+step (tracked in ADR-006's "Future considerations"), deferred because that dispatch path was just
+hardened for resilient SSE reconnect/resume and deserves its own focused change.
 
 ## Use Cases
 
@@ -144,16 +167,15 @@ Client → API → Producer
 
 ## Queue Technology Evaluation
 
-| Technology | Advantages | Disadvantages |
-|---|---|---|
-| BullMQ | Simple, fast setup | Redis dependency |
-| RabbitMQ | Mature message broker | More operational complexity |
-| Kafka | High throughput | Overkill for MVP |
+Full options table (Kafka, RabbitMQ, Redis List, Redis Streams) and rationale:
+[ADR-006](decision/006-queue-technology-selection.md).
 
 Current strategy:
 
-- MVP: BullMQ
-- Future scaling: Kafka
+- Now: Redis Streams (reuses already-deployed Redis; native consumer groups + per-message ack
+  give RabbitMQ-like delivery guarantees without a new service to operate)
+- Future scaling: Kafka or RabbitMQ, as a new `JobQueue<T>` adapter, if/when scale or reliability
+  needs outgrow a single Redis instance
 
 ---
 
@@ -252,11 +274,9 @@ Spring Boot Instances
 
 ## Observability
 
-Future integration:
-
-- Prometheus
-- Grafana
-- OpenTelemetry
+- Prometheus — `/actuator/prometheus`, scraped per `observability/prometheus` config
+- Grafana — dashboards in `observability/grafana`
+- OpenTelemetry (future)
 
 ---
 
