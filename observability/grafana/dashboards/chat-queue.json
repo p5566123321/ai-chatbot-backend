@@ -1,0 +1,79 @@
+{
+  "title": "Chat Job Queue (Redis Streams)",
+  "uid": "chat-queue",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Enqueue latency: JobQueue.enqueue (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "queue_enqueue_time_seconds{stream=\"queue:chat\", quantile=\"0.5\"}",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "queue_enqueue_time_seconds{stream=\"queue:chat\", quantile=\"0.95\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "queue_enqueue_time_seconds{stream=\"queue:chat\", quantile=\"0.99\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Enqueue rate (jobs/sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (stream) (rate(queue_enqueue_time_seconds_count[1m]))",
+          "legendFormat": "{{stream}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Job processing latency: RedisStreamConsumer (p50/p95/p99, all outcomes)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "queue_job_process_time_seconds{stream=\"queue:chat\", quantile=\"0.5\"}",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "queue_job_process_time_seconds{stream=\"queue:chat\", quantile=\"0.95\"}",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "queue_job_process_time_seconds{stream=\"queue:chat\", quantile=\"0.99\"}",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Job outcome rate (success / retry / dead_lettered / malformed per sec)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(queue_job_process_time_seconds_count{stream=\"queue:chat\"}[1m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    }
+  ]
+}
