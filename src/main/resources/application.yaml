@@ -18,9 +18,6 @@ spring:
     properties:
       hibernate:
         format_sql: true
-  session:
-    store-type: redis
-    timeout: 30m
 management:
   endpoints:
     web:
@@ -47,3 +44,7 @@ app:
     max-attempts: 3
     block-timeout-ms: 5000
     reclaim-idle-ms: 30000
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ai-chatbot-backend
+    expiration-ms: ${JWT_EXPIRATION_MS:3600000}

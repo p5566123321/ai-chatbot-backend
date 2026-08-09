@@ -5,15 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 Kotlin/Spring Boot backend for an AI chatbot, backed by Postgres (durable storage) and Redis
-(short-term conversation cache + Spring Session store), calling Gemini via `google-genai`. Built
-iteratively — see `docs/architecture.md` and `docs/roadmap.md` for the phased plan (currently in
-Phase 2: streaming + Redis context) and `docs/decision/*.md` for the ADRs behind current design
-choices.
+(short-term conversation cache), calling Gemini via `google-genai`. Built iteratively — see
+`docs/architecture.md` and `docs/roadmap.md` for the phased plan (Phases 1-3 and 5 are built:
+REST/LLM/Postgres, streaming/Redis context, the queue, and JWT auth; Phase 4/RAG hasn't started)
+and `docs/decision/*.md` for the ADRs behind current design choices.
 
 ## Commands
 
 ```bash
-# Run the app (needs .env — copy .env.example and fill in GOOGLE_API_KEY, DB_*, REDIS_*, GEMINI_MODEL)
+# Run the app (needs .env — copy .env.example and fill in GOOGLE_API_KEY, DB_*, REDIS_*,
+# GEMINI_MODEL, JWT_SECRET — the last must be a real random value, e.g. `openssl rand -base64 64`;
+# anything shorter than 256 bits fails HS-family key validation at startup, by design)
 ./gradlew bootRun
 
 # Build
@@ -51,6 +53,25 @@ creates a `Conversation` row and returns its `uuid`; every other endpoint is sco
 `/api/conversations/{conversationId}/...`. A `conversationId` that doesn't resolve to a row is a
 `404` (`ConversationNotFoundException`) — it is intentionally *not* auto-created on miss, since
 that used to mask stale/typo'd client IDs (see ADR-004's "Context").
+
+### Authentication and conversation ownership (ADR-007)
+
+`org.timpeng.chatbot.auth`: self-issued, access-only JWTs (no refresh token) via
+`POST /api/auth/register` / `POST /api/auth/login`, backed by a Postgres `User` table
+(BCrypt-hashed passwords). `JwtAuthenticationFilter` populates `SecurityContext` from the
+`Authorization: Bearer` header ahead of `SecurityConfig`'s rules (`/api/auth/**` and
+`/actuator/health`/`/actuator/prometheus` are `permitAll`, everything else under `/api/**`
+requires a valid token). It's deliberately **not** a `@Component` — see its own kdoc for why
+(double filter registration + breaking `@WebMvcTest` slices that don't load `@Service` beans).
+Controllers pull the caller's `userId` via `@CurrentUserId`, a `HandlerMethodArgumentResolver`
+registered in `WebConfig`.
+
+`Conversation.ownerId` (nullable, never backfilled for pre-auth rows) is stamped at creation and
+enforced by `ConversationService.requireOwnedConversation(conversationId, ownerId)` on every other
+conversation-scoped endpoint. A conversation that exists but isn't the caller's 404s exactly like
+an unknown id — same "don't let the response distinguish those two cases" reasoning ADR-004 uses
+for unresolvable IDs. Any new endpoint that takes a `conversationId` must call this before doing
+anything with it; it's not automatic.
 
 ### Cache-aside conversation history (ADR-003)
 
@@ -142,7 +163,8 @@ strings.
 Micrometer/Prometheus timers are threaded through the hot path deliberately, not just at the
 edges: `history.cache.time` (tagged `result=hit|miss|disabled`), `history.db.fallback.time`,
 `llm.generate.time` / `llm.stream_generate.time` (tagged `outcome=success|timeout|failure|cancelled`),
-`llm.stream_generate.first_token_time`, plus `@Timed("total.chat.time")` on `ChatService.chat`.
+`llm.stream_generate.first_token_time`, `auth.login.time` (tagged `outcome=success|bad_credentials`),
+plus `@Timed("total.chat.time")` on `ChatService.chat`.
 `/actuator/prometheus` is exposed. When adding a new external call or cache path, tag its timer
 with an outcome/result dimension the same way rather than a bare duration — that's what the
 existing Grafana dashboard (`observability/`) and the benchmark protocol in ADR-005 rely on.
@@ -157,7 +179,10 @@ and isn't sent to Gemini (`GeminiProvider.buildContents` filters to USER/ASSISTA
 
 All exceptions are mapped centrally in `GlobalExceptionHandler` to a single `ErrorResponse` shape
 — `ConversationNotFoundException` → 404, `IllegalArgumentException`/malformed body → 400,
-`LlmException` → 503 (`LLM_UNAVAILABLE`), everything else → 500. Add new domain exceptions there
+`LlmException` → 503 (`LLM_UNAVAILABLE`), `UserAlreadyExistsException` → 409,
+`BadCredentialsException` → 401 (wrong login credentials specifically; a missing/invalid bearer
+token on any other endpoint 401s via `SecurityConfig`'s `AuthenticationEntryPoint` instead, before
+a request ever reaches a controller), everything else → 500. Add new domain exceptions there
 rather than handling them ad hoc in controllers.
 
 ## Benchmarking

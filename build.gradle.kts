@@ -23,16 +23,25 @@ repositories {
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis:4.1.0")
-    implementation("org.springframework.session:spring-session-data-redis")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     implementation("tools.jackson.module:jackson-module-kotlin")
     implementation("com.google.genai:google-genai:1.0.0")
 
+    // JWT signing/parsing (ADR-007). jjwt-gson, not jjwt-jackson: jjwt-jackson depends on classic
+    // com.fasterxml.jackson, which would sit alongside this project's Jackson 3
+    // (tools.jackson.*) for no reason — JWT claims don't need the app's main object mapper, so
+    // Gson sidesteps the version question entirely instead of pinning and hoping.
+    implementation("io.jsonwebtoken:jjwt-api:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-gson:0.13.0")
+
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.springframework:spring-webflux")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -37,7 +37,8 @@ class ChatServiceTest {
     private val emitter: SseEmitter = mockk(relaxed = true)
 
     private val conversationId = "test-uuid"
-    private val conversation = Conversation(id = 1L, uuid = conversationId)
+    private val ownerId = 1L
+    private val conversation = Conversation(id = 1L, uuid = conversationId, ownerId = ownerId)
     private val history = listOf(
         Message(id = 1L, conversation = conversation, role = Role.USER, content = "previous")
     )
@@ -51,6 +52,9 @@ class ChatServiceTest {
             emitterRegistry,
             chatJobQueue,
         )
+        // Ownership check passes by default; tests focus on what happens after it, same as
+        // every other test in this class already assumes saveUserMessage's own lookup succeeds.
+        every { conversationService.requireOwnedConversation(any(), any()) } returns conversation
     }
 
     private fun userMessage(content: String) =
@@ -66,7 +70,7 @@ class ChatServiceTest {
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi there!", "gemini-2.0-flash", 123L)
 
-        val result = chatService.chat(conversationId, "Hello")
+        val result = chatService.chat(conversationId, ownerId, "Hello")
 
         assertEquals(ChatResponse("Hi there!", "gemini-2.0-flash", 123L), result)
     }
@@ -81,7 +85,7 @@ class ChatServiceTest {
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
-        chatService.chat(conversationId, "Hello")
+        chatService.chat(conversationId, ownerId, "Hello")
 
         verify { conversationService.saveUserMessage(conversationId, "Hello") }
     }
@@ -96,7 +100,7 @@ class ChatServiceTest {
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
-        chatService.chat(conversationId, "Hello")
+        chatService.chat(conversationId, ownerId, "Hello")
 
         verify { conversationService.saveAssistantMessage(conversationId, llmResponse) }
     }
@@ -113,7 +117,7 @@ class ChatServiceTest {
         every { conversationService.saveAssistantMessage(newConversationId, llmResponse) } returns
             ChatResponse("Hello!", "gemini-2.0-flash", 80L)
 
-        val result = chatService.chat(newConversationId, "Hi")
+        val result = chatService.chat(newConversationId, ownerId, "Hi")
 
         assertEquals("Hello!", result.message)
         verify { conversationService.saveUserMessage(newConversationId, "Hi") }
@@ -127,7 +131,7 @@ class ChatServiceTest {
         every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
 
         assertThrows<ChatException> {
-            chatService.chat(conversationId, "Hello")
+            chatService.chat(conversationId, ownerId, "Hello")
         }
     }
 
@@ -138,7 +142,7 @@ class ChatServiceTest {
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
         every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
 
-        runCatching { chatService.chat(conversationId, "Hello") }
+        runCatching { chatService.chat(conversationId, ownerId, "Hello") }
 
         verify(exactly = 0) { conversationService.saveAssistantMessage(conversationId, any()) }
     }
@@ -154,7 +158,7 @@ class ChatServiceTest {
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse(markdown, "gemini-2.0-flash", 10L)
 
-        val result = chatService.chat(conversationId, "Hello")
+        val result = chatService.chat(conversationId, ownerId, "Hello")
 
         verify { conversationService.saveAssistantMessage(conversationId, llmResponse) }
         assertEquals(markdown, result.message)
@@ -165,7 +169,7 @@ class ChatServiceTest {
         every { conversationService.saveUserMessage(conversationId, "hello") } returns
             history + userMessage("hello")
 
-        chatService.streamChat(conversationId, "hello", emitter)
+        chatService.streamChat(conversationId, ownerId, "hello", emitter)
 
         verifyOrder {
             conversationService.saveUserMessage(conversationId, "hello")
@@ -179,7 +183,7 @@ class ChatServiceTest {
             RuntimeException("Conversation not found: $conversationId")
 
         assertThrows<RuntimeException> {
-            chatService.streamChat(conversationId, "hello", emitter)
+            chatService.streamChat(conversationId, ownerId, "hello", emitter)
         }
 
         verify(exactly = 0) { chatJobQueue.enqueue(any()) }
@@ -190,7 +194,7 @@ class ChatServiceTest {
         every { conversationService.saveUserMessage(conversationId, "hello") } returns
             history + userMessage("hello")
 
-        chatService.streamChat(conversationId, "hello", emitter)
+        chatService.streamChat(conversationId, ownerId, "hello", emitter)
 
         verify { generatingStatusService.markGenerating(conversationId) }
         verify { chatJobQueue.enqueue(ChatJobPayload(conversationId)) }
@@ -201,7 +205,7 @@ class ChatServiceTest {
         every { conversationService.saveUserMessage(conversationId, "hello") } returns
             history + userMessage("hello")
 
-        chatService.streamChat(conversationId, "hello", emitter)
+        chatService.streamChat(conversationId, ownerId, "hello", emitter)
 
         val handle = emitterRegistry.get(conversationId)
         assertSame(emitter, handle?.emitter)
@@ -215,7 +219,7 @@ class ChatServiceTest {
         val onCompletionSlot = slot<Runnable>()
         every { emitter.onCompletion(capture(onCompletionSlot)) } returns Unit
 
-        chatService.streamChat(conversationId, "hello", emitter)
+        chatService.streamChat(conversationId, ownerId, "hello", emitter)
         val handle = emitterRegistry.get(conversationId)!!
 
         onCompletionSlot.captured.run()
@@ -228,7 +232,7 @@ class ChatServiceTest {
     fun `streamStatus reports generating with partial text when a stream is in flight`(){
         every { generatingStatusService.getGeneratingProgress(conversationId) } returns "partial tex"
 
-        val result = chatService.streamStatus(conversationId)
+        val result = chatService.streamStatus(conversationId, ownerId)
 
         assertEquals(StreamStatusResponse(generating = true, partial = "partial tex"), result)
     }
@@ -237,7 +241,7 @@ class ChatServiceTest {
     fun `streamStatus reports not generating when nothing is in flight`(){
         every { generatingStatusService.getGeneratingProgress(conversationId) } returns null
 
-        val result = chatService.streamStatus(conversationId)
+        val result = chatService.streamStatus(conversationId, ownerId)
 
         assertEquals(StreamStatusResponse(generating = false), result)
     }

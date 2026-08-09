@@ -25,11 +25,63 @@ class ConversationServiceTest {
     private lateinit var conversationService: ConversationService
 
     private val conversationId = "test-uuid"
-    private val conversation = Conversation(id = 1L, uuid = conversationId)
+    private val ownerId = 1L
+    private val conversation = Conversation(id = 1L, uuid = conversationId, ownerId = ownerId)
 
     @BeforeEach
     fun setUp() {
         conversationService = ConversationService(conversationRepository, messageRepository, conversationCacheService, conversationHistoryService)
+    }
+
+    // createConversation
+
+    @Test
+    fun `createConversation stamps the caller as owner`() {
+        val slot = slot<Conversation>()
+        every { conversationRepository.save(capture(slot)) } answers { slot.captured }
+
+        val result = conversationService.createConversation(ownerId)
+
+        assertEquals(ownerId, result.ownerId)
+    }
+
+    // requireOwnedConversation (ADR-007)
+
+    @Test
+    fun `requireOwnedConversation returns the conversation when the caller is the owner`() {
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+
+        val result = conversationService.requireOwnedConversation(conversationId, ownerId)
+
+        assertEquals(conversation, result)
+    }
+
+    @Test
+    fun `requireOwnedConversation throws 404 for an unknown conversationId`() {
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.empty()
+
+        assertThrows<ConversationNotFoundException> {
+            conversationService.requireOwnedConversation(conversationId, ownerId)
+        }
+    }
+
+    @Test
+    fun `requireOwnedConversation throws 404, not 403, when the conversation belongs to someone else`() {
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+
+        assertThrows<ConversationNotFoundException> {
+            conversationService.requireOwnedConversation(conversationId, ownerId = 999L)
+        }
+    }
+
+    @Test
+    fun `requireOwnedConversation throws 404 for a pre-auth conversation with no owner`() {
+        val orphan = conversation.copy(ownerId = null)
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(orphan)
+
+        assertThrows<ConversationNotFoundException> {
+            conversationService.requireOwnedConversation(conversationId, ownerId)
+        }
     }
 
     // saveMessage

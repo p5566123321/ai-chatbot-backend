@@ -21,7 +21,8 @@ class ChatService(
     private val logger = LoggerFactory.getLogger(ChatService::class.java)
 
     @Timed(value = "total.chat.time", description = "聊天耗時", percentiles = [0.5, 0.95, 0.99])
-    fun chat(conversationId: String, userMsg: String): ChatResponse {
+    fun chat(conversationId: String, ownerId: Long, userMsg: String): ChatResponse {
+        conversationService.requireOwnedConversation(conversationId, ownerId)
 
         val messages = conversationService.saveUserMessage(conversationId, userMsg)
 
@@ -35,9 +36,10 @@ class ChatService(
         return conversationService.saveAssistantMessage(conversationId, llmResponse)
     }
 
-    fun streamChat(conversationId: String, userMsg: String, emitter: SseEmitter) {
-        // Runs before any async dispatch so an unknown conversationId still surfaces
+    fun streamChat(conversationId: String, ownerId: Long, userMsg: String, emitter: SseEmitter) {
+        // Runs before any async dispatch so an unknown/not-owned conversationId still surfaces
         // as a normal synchronous 404 via GlobalExceptionHandler, not inside the emitter.
+        conversationService.requireOwnedConversation(conversationId, ownerId)
         conversationService.saveUserMessage(conversationId, userMsg)
 
         val handle = emitterRegistry.register(conversationId, emitter)
@@ -66,7 +68,8 @@ class ChatService(
         chatJobQueue.enqueue(ChatJobPayload(conversationId))
     }
 
-    fun streamStatus(conversationId: String): StreamStatusResponse {
+    fun streamStatus(conversationId: String, ownerId: Long): StreamStatusResponse {
+        conversationService.requireOwnedConversation(conversationId, ownerId)
         val partial = generatingStatusService.getGeneratingProgress(conversationId)
         return if (partial != null) StreamStatusResponse(generating = true, partial = partial)
         else StreamStatusResponse(generating = false)

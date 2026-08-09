@@ -16,6 +16,9 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.reactive.JdkClientHttpConnector
 import org.springframework.http.codec.ServerSentEvent
 import org.springframework.test.web.reactive.server.WebTestClient
+import org.timpeng.chatbot.auth.JwtService
+import org.timpeng.chatbot.auth.User
+import org.timpeng.chatbot.auth.UserRepository
 import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.ConversationRepository
 import org.timpeng.chatbot.conversation.message.MessageRepository
@@ -39,12 +42,20 @@ class ChatSseIntegrationTest {
     private lateinit var messageRepository: MessageRepository
 
     @Autowired
+    private lateinit var userRepository: UserRepository
+
+    @Autowired
+    private lateinit var jwtService: JwtService
+
+    @Autowired
     private lateinit var generatingStatusService: GeneratingStatusService
 
     @MockkBean
     private lateinit var llmProvider: LlmProvider
 
     private lateinit var webTestClient: WebTestClient
+    private var ownerId: Long = 0
+    private lateinit var authHeader: String
     private lateinit var conversationId: String
     private lateinit var streamUri: String
     private lateinit var statusUri: String
@@ -56,8 +67,15 @@ class ChatSseIntegrationTest {
             .responseTimeout(Duration.ofSeconds(10))
             .build()
 
+        // SecurityConfig requires a bearer token on every conversation-scoped endpoint (ADR-007),
+        // and ownership is enforced against whoever's userId is in that token — so every request
+        // below needs both a real conversation row and a real, matching, signed token.
+        val user = userRepository.save(User(email = "sse-test-${UUID.randomUUID()}@example.com", passwordHash = "unused"))
+        ownerId = user.id!!
+        authHeader = "Bearer ${jwtService.issue(ownerId).token}"
+
         conversationId = UUID.randomUUID().toString()
-        conversationRepository.save(Conversation(uuid = conversationId))
+        conversationRepository.save(Conversation(uuid = conversationId, ownerId = ownerId))
         streamUri = "/api/conversations/$conversationId/messages/stream"
         statusUri = "/api/conversations/$conversationId/messages/stream/status"
     }
@@ -71,6 +89,7 @@ class ChatSseIntegrationTest {
             )
             conversationRepository.delete(conversation)
         }
+        userRepository.deleteById(ownerId)
     }
 
     @Test
@@ -82,6 +101,7 @@ class ChatSseIntegrationTest {
 
         val body = webTestClient.post()
             .uri(streamUri)
+            .header("Authorization", authHeader)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ChatRequest(message = "Hi"))
             .exchange()
@@ -111,6 +131,7 @@ class ChatSseIntegrationTest {
         // name directly instead of guessing at how it's framed on the wire.
         val events = webTestClient.post()
             .uri(streamUri)
+            .header("Authorization", authHeader)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ChatRequest(message = "Hi"))
             .exchange()
@@ -143,6 +164,7 @@ class ChatSseIntegrationTest {
         // a 5xx status — the only client-visible signal is the explicit SSE error event.
         val events = webTestClient.post()
             .uri(streamUri)
+            .header("Authorization", authHeader)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ChatRequest(message = "Hi"))
             .exchange()
@@ -168,6 +190,7 @@ class ChatSseIntegrationTest {
     fun `stream to unknown conversation returns 404`() {
         webTestClient.post()
             .uri("/api/conversations/${UUID.randomUUID()}/messages/stream")
+            .header("Authorization", authHeader)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ChatRequest(message = "Hi"))
             .exchange()
@@ -176,7 +199,7 @@ class ChatSseIntegrationTest {
 
     @Test
     fun `stream status endpoint reflects redis generating state`() {
-        webTestClient.get().uri(statusUri).exchange()
+        webTestClient.get().uri(statusUri).header("Authorization", authHeader).exchange()
             .expectStatus().isOk
             .expectBody(StreamStatusResponse::class.java)
             .isEqualTo(StreamStatusResponse(generating = false))
@@ -184,14 +207,14 @@ class ChatSseIntegrationTest {
         generatingStatusService.markGenerating(conversationId)
         generatingStatusService.updateGeneratingProgress(conversationId, "Hello wor")
 
-        webTestClient.get().uri(statusUri).exchange()
+        webTestClient.get().uri(statusUri).header("Authorization", authHeader).exchange()
             .expectStatus().isOk
             .expectBody(StreamStatusResponse::class.java)
             .isEqualTo(StreamStatusResponse(generating = true, partial = "Hello wor"))
 
         generatingStatusService.clearGenerating(conversationId)
 
-        webTestClient.get().uri(statusUri).exchange()
+        webTestClient.get().uri(statusUri).header("Authorization", authHeader).exchange()
             .expectStatus().isOk
             .expectBody(StreamStatusResponse::class.java)
             .isEqualTo(StreamStatusResponse(generating = false))
@@ -210,13 +233,14 @@ class ChatSseIntegrationTest {
         // so the status endpoint can observe it mid-flight from a separate "connection".
         webTestClient.post()
             .uri(streamUri)
+            .header("Authorization", authHeader)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(ChatRequest(message = "Hi"))
             .exchange()
             .expectStatus().isOk
 
         Thread.sleep(300)
-        val midStatus = webTestClient.get().uri(statusUri).exchange()
+        val midStatus = webTestClient.get().uri(statusUri).header("Authorization", authHeader).exchange()
             .expectStatus().isOk
             .returnResult(StreamStatusResponse::class.java)
             .responseBody
@@ -225,7 +249,7 @@ class ChatSseIntegrationTest {
         assertEquals(StreamStatusResponse(generating = true, partial = "Hello"), midStatus)
 
         Thread.sleep(1500)
-        val finalStatus = webTestClient.get().uri(statusUri).exchange()
+        val finalStatus = webTestClient.get().uri(statusUri).header("Authorization", authHeader).exchange()
             .expectStatus().isOk
             .returnResult(StreamStatusResponse::class.java)
             .responseBody

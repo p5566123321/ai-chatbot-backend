@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.conversation
+package org.timpeng.chatbot.auth
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -10,19 +10,18 @@ import jakarta.persistence.Table
 import java.time.LocalDateTime
 
 @Entity
-@Table(name = "conversations", indexes = [Index(name = "idx_conversation", columnList = "uuid", unique = true)])
-data class Conversation (
+@Table(name = "users", indexes = [Index(name = "idx_user_email", columnList = "email", unique = true)])
+data class User(
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long? = null,
 
     @Column(nullable = false, unique = true)
-    val uuid: String,
+    val email: String,
 
-    // Nullable and never backfilled (ADR-007): conversations created before auth landed have no
-    // resolvable owner, and are treated as orphaned — 404 for every caller, not just non-owners.
-    @Column(name = "owner_id")
-    val ownerId: Long? = null,
+    // BCrypt hash only — never the plaintext password. See PasswordEncoderConfig.
+    @Column(nullable = false)
+    val passwordHash: String,
 
     @Column(nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),

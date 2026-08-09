@@ -21,8 +21,21 @@ class ConversationService (
     private val historyService: ConversationHistoryService,
 ) {
 
-    fun createConversation(): Conversation {
-        return conversationRepository.save(Conversation(uuid = UUID.randomUUID().toString()))
+    fun createConversation(ownerId: Long): Conversation {
+        return conversationRepository.save(Conversation(uuid = UUID.randomUUID().toString(), ownerId = ownerId))
+    }
+
+    // ADR-007: the one ownership gate every conversation-scoped endpoint calls before doing
+    // anything else. A conversation that exists but belongs to someone else (or predates auth,
+    // ownerId == null) 404s exactly like an unknown id — same reasoning as ConversationNotFoundException
+    // elsewhere in this class: don't let a response distinguish "doesn't exist" from "not yours".
+    fun requireOwnedConversation(conversationId: String, ownerId: Long): Conversation {
+        val conversation = conversationRepository.findByUuid(conversationId)
+            .orElseThrow { ConversationNotFoundException("Conversation not found: $conversationId") }
+        if (conversation.ownerId != ownerId) {
+            throw ConversationNotFoundException("Conversation not found: $conversationId")
+        }
+        return conversation
     }
 
     fun saveMessage(conversationId: String, role : Role, content: String): Message {

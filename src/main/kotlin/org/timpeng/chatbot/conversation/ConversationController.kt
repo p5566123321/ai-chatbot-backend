@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import org.timpeng.chatbot.auth.CurrentUserId
 import org.timpeng.chatbot.conversation.message.MessageResponse
 import java.net.URI
 
@@ -17,15 +18,16 @@ class ConversationController(
 ) {
 
     @PostMapping
-    fun createConversation(): ResponseEntity<ConversationResponse> {
-        val conversation = conversationService.createConversation()
+    fun createConversation(@CurrentUserId ownerId: Long): ResponseEntity<ConversationResponse> {
+        val conversation = conversationService.createConversation(ownerId)
         return ResponseEntity
             .created(URI.create("/api/conversations/${conversation.uuid}"))
             .body(ConversationResponse(conversation.uuid, conversation.createdAt))
     }
 
     @GetMapping("/{conversationId}/messages")
-    fun getMessages(@PathVariable conversationId: String): List<MessageResponse> {
+    fun getMessages(@PathVariable conversationId: String, @CurrentUserId ownerId: Long): List<MessageResponse> {
+        conversationService.requireOwnedConversation(conversationId, ownerId)
         return conversationHistoryService.getHistory(conversationId)
             .map { MessageResponse(it.role, it.content, it.createdAt) }
     }

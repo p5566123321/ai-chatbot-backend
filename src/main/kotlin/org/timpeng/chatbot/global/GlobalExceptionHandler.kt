@@ -4,9 +4,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.timpeng.chatbot.auth.UserAlreadyExistsException
 import org.timpeng.chatbot.chat.ChatController
 import org.timpeng.chatbot.llm.LlmException
 import org.timpeng.chatbot.conversation.ConversationNotFoundException
@@ -112,6 +114,42 @@ class GlobalExceptionHandler {
                     status = 503,
                     error = "LLM_UNAVAILABLE",
                     message = ex.message ?: "Unexpected error occurred"
+                )
+            )
+    }
+
+    // 409 - Conflict (ADR-007)
+    @ExceptionHandler(UserAlreadyExistsException::class)
+    fun handleUserAlreadyExists(ex: UserAlreadyExistsException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("UserAlreadyExistsException: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.CONFLICT)
+            .body(
+                ErrorResponse(
+                    status = 409,
+                    error = "Conflict",
+                    message = ex.message ?: "User already exists"
+                )
+            )
+    }
+
+    // 401 - Unauthorized (ADR-007; token-missing/invalid 401s are handled by SecurityConfig's
+    // AuthenticationEntryPoint instead — this one is specifically for a wrong email/password on
+    // POST /api/auth/login)
+    @ExceptionHandler(BadCredentialsException::class)
+    fun handleBadCredentials(ex: BadCredentialsException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("BadCredentialsException: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.UNAUTHORIZED)
+            .body(
+                ErrorResponse(
+                    status = 401,
+                    error = "Unauthorized",
+                    message = ex.message ?: "Invalid credentials"
                 )
             )
     }

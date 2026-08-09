@@ -14,3 +14,6 @@
 
 ## Phase 4
 - RAG
+
+## Phase 5
+- JWT authentication + per-user conversation ownership (see ADR-007, `docs/architecture.md`)

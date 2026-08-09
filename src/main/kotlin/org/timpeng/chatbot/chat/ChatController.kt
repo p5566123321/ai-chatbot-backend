@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import org.timpeng.chatbot.auth.CurrentUserId
 
 @RestController
 @RequestMapping("/api/conversations/{conversationId}")
@@ -21,23 +22,31 @@ class ChatController(private val chatService: ChatService) {
     private val sseTimeoutMs: Long = 60000
 
     @PostMapping("/messages")
-    fun chat(@PathVariable conversationId: String, @RequestBody request: ChatRequest): ChatResponse {
+    fun chat(
+        @PathVariable conversationId: String,
+        @CurrentUserId ownerId: Long,
+        @RequestBody request: ChatRequest,
+    ): ChatResponse {
         logger.info("[REQ] conversationId=$conversationId, messageLength=${request.message.length}")
 
-        return chatService.chat(conversationId, request.message)
+        return chatService.chat(conversationId, ownerId, request.message)
     }
 
     @PostMapping("/messages/stream", produces = [MediaType.TEXT_EVENT_STREAM_VALUE])
-    fun streamChat(@PathVariable conversationId: String, @RequestBody request: ChatRequest): SseEmitter {
+    fun streamChat(
+        @PathVariable conversationId: String,
+        @CurrentUserId ownerId: Long,
+        @RequestBody request: ChatRequest,
+    ): SseEmitter {
         logger.info("[REQ] conversationId=$conversationId, messageLength=${request.message.length}")
 
         val emitter = SseEmitter(sseTimeoutMs)
-        chatService.streamChat(conversationId, request.message, emitter)
+        chatService.streamChat(conversationId, ownerId, request.message, emitter)
         return emitter
     }
 
     @GetMapping("/messages/stream/status")
-    fun streamStatus(@PathVariable conversationId: String): StreamStatusResponse {
-        return chatService.streamStatus(conversationId)
+    fun streamStatus(@PathVariable conversationId: String, @CurrentUserId ownerId: Long): StreamStatusResponse {
+        return chatService.streamStatus(conversationId, ownerId)
     }
 }

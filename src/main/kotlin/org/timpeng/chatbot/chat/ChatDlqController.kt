@@ -15,8 +15,10 @@ private const val MAX_LIMIT = 500
  * Deliberately GET-only: requeue/purge is a separate, bigger feature (reconstructing/validating a
  * payload to safely re-enqueue, deciding who's allowed to) that isn't built here.
  *
- * No auth — matches this app's posture everywhere else today (no Spring Security dependency
- * exists yet at all). Worth revisiting before this is ever reachable outside a trusted network.
+ * Behind a bearer token since ADR-007 (nothing under `/api/admin` is in `SecurityConfig`'s
+ * permitAll list), but not admin-gated — any authenticated user can reach it, since there's no
+ * role/permission concept yet. ADR-007's "Future considerations" tracks adding one specifically
+ * to close this.
  */
 @RestController
 @RequestMapping("/api/admin/queues/chat/dlq")

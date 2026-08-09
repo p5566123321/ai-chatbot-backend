@@ -232,6 +232,57 @@ User Query → Embedding → Retrieval
 
 ---
 
+# Phase 5 — JWT Authentication
+
+## Goals
+
+- Scope every conversation to the account that created it
+- Close the gap ADR-002/ADR-004 flagged and deferred: a leaked `conversationId` alone used to be
+  enough to read or continue anyone's conversation
+
+## Architecture
+
+```text
+Client
+   │  Authorization: Bearer <JWT>
+   ▼
+JwtAuthenticationFilter  ──▶  SecurityContext (userId)
+   │
+   ▼
+SecurityConfig (stateless, permitAll only for /api/auth/** + actuator health/prometheus)
+   │
+   ▼
+Controller (@CurrentUserId) ──▶ ConversationService.requireOwnedConversation
+                                     │
+                                     ├─ unknown / not-owned / pre-auth orphan → 404
+                                     └─ owned → proceed
+```
+
+## Implementation status
+
+**Built.** Full design and the options weighed (self-issued JWT vs. an external IdP, access-only
+vs. refresh tokens, backfilling pre-auth conversations vs. orphaning them) are in
+[ADR-007](decision/007-jwt-authentication.md); this section only summarizes the shape.
+
+- `POST /api/auth/register` / `POST /api/auth/login` (`org.timpeng.chatbot.auth`) — a new `User`
+  table (Postgres, BCrypt-hashed passwords), issuing an access-only JWT on login (no refresh
+  token, no server-side session — `RedisSessionConfig`/`spring-session-data-redis` were removed as
+  dead weight once this landed, since nothing had ever used `HttpSession`).
+- `JwtAuthenticationFilter` populates `SecurityContext` from the `Authorization` header ahead of
+  `SecurityConfig`'s `authorizeHttpRequests` rules; `@CurrentUserId` (a
+  `HandlerMethodArgumentResolver`) is how controllers read the resulting `userId` back out.
+- `Conversation.ownerId` (nullable, never backfilled) is stamped at creation and checked by
+  `ConversationService.requireOwnedConversation` on every other conversation-scoped endpoint —
+  `ConversationController.getMessages`, and `ChatController.chat`/`streamChat`/`streamStatus` via
+  `ChatService`. A conversation that exists but isn't the caller's 404s exactly like an unknown
+  id, same reasoning ADR-004 already used for unresolvable IDs: don't let the response distinguish
+  "doesn't exist" from "not yours."
+- Not yet built (tracked in ADR-007's "Future considerations"): refresh/revocable tokens, and a
+  role concept — the latter specifically to admin-gate `GET /api/admin/queues/chat/dlq`
+  (`ChatDlqController`), which today is authenticated but not admin-restricted.
+
+---
+
 # Deployment Architecture
 
 ## Local Development
@@ -278,9 +329,11 @@ Spring Boot Instances
 
 ## Security
 
+- JWT authentication + per-user conversation ownership (Phase 5, ADR-007)
 - API key protection
 - Environment variable management
 - Rate limiting (future)
+- Role-based admin gate for `/api/admin/**` (future — see ADR-007)
 
 ## Observability
 
