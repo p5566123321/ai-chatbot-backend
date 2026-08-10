@@ -47,7 +47,7 @@ class JwtAuthenticationFilter(private val jwtService: JwtService) : OncePerReque
 
         if (header != null && header.startsWith(BEARER_PREFIX)) {
             val token = header.removePrefix(BEARER_PREFIX)
-            val userId = jwtService.parseUserId(token)
+            val userId = jwtService.validateToken(token)?.let { jwtService.parseUserId(it) }
 
             if (userId != null) {
                 SecurityContextHolder.getContext().authentication = JwtAuthenticationToken(userId)

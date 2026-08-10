@@ -1,5 +1,6 @@
 package org.timpeng.chatbot.auth
 
+import io.jsonwebtoken.Claims
 import io.jsonwebtoken.JwtException
 import io.jsonwebtoken.Jwts
 import io.jsonwebtoken.security.Keys
@@ -37,15 +38,32 @@ class JwtService(jwtProperties: JwtProperties) {
         return IssuedToken(token, expiresAt)
     }
 
-    /** Returns the authenticated userId, or null for a missing/expired/malformed/forged token. */
-    fun parseUserId(token: String): Long? {
+    /**
+     * Verifies signature and expiry and returns the token's claims, or null for anything
+     * missing/expired/malformed/forged. `ExpiredJwtException` doesn't need its own catch clause —
+     * it's already a `JwtException` subtype, so it's covered by the same branch.
+     */
+    fun validateToken(token: String): Claims? {
         return try {
-            val claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).payload
-            claims.subject.toLongOrNull()
+            parseClaims(token)
         } catch (_: JwtException) {
             null
         } catch (_: IllegalArgumentException) {
             null
         }
     }
+
+    // Never returns null itself — only ever a parsed Claims or a thrown JwtException/
+    // IllegalArgumentException, which validateToken (its only caller) turns into null.
+    private fun parseClaims(token: String): Claims =
+        Jwts.parser().verifyWith(key).build().parseSignedClaims(token).payload
+
+    /**
+     * Extracts the userId a token was issued for — see [issue]'s `subject(userId.toString())`.
+     * `?.` guards against [Claims.getSubject] returning null (a validly-signed token that, for
+     * whatever reason, was issued without a `sub` claim) — without it this is a Kotlin platform
+     * type, so a null subject would NPE inside `toLongOrNull()` instead of falling through to a
+     * clean null like every other "not a valid userId" case here.
+     */
+    fun parseUserId(claims: Claims): Long? = claims.subject?.toLongOrNull()
 }
