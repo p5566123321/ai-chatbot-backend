@@ -283,6 +283,60 @@ vs. refresh tokens, backfilling pre-auth conversations vs. orphaning them) are i
 
 ---
 
+# Phase 6 — User-Configurable Model Parameters
+
+## Goals
+
+- Let each user pick their own chat model and bring their own API key (BYOK)
+- Let each user tune their own history window size (currently a global
+  `app.conversation.cache.max-msg`)
+- Do this without weakening the security/observability guarantees Phases 1-5 already built
+
+## Architecture
+
+```text
+Client
+   │  model, api key, history window
+   ▼
+UserSettingsController ──▶ UserSettings (Postgres, keyed by userId)
+                              │  api key stored encrypted at rest
+                              ▼
+ChatService ──▶ LlmProviderFactory.resolve(userSettings)
+                              │
+                              ├─ provider + model + key resolved per request
+                              │  (replaces today's startup-time
+                              │  @ConditionalOnProperty bean selection
+                              │  in LlmConfig)
+                              ▼
+                        LlmProvider (Gemini / other)
+```
+
+## Design considerations
+
+- **Per-request provider resolution, not per-instance.** Today `LlmConfig` picks a single
+  `LlmProvider` bean at startup via `app.llm.provider`. Supporting per-user model choice means
+  resolving provider + model + key per request instead — a factory/strategy call inside
+  `ChatService`, not a Spring conditional bean. `FakeLlmProvider` keeps working as one of the
+  resolvable options (e.g. for a "test without spending your own quota" mode).
+- **BYOK key storage is its own security surface**, not a bolt-on column: encryption at rest, a
+  key-management story for the encryption key itself, and keeping user API keys out of logs,
+  error messages, and Micrometer tags. Worth its own ADR before implementation, the same way
+  auth got ADR-007.
+- **Model choice has to cover the embedding model, not just the chat model**, once Phase 4 (RAG)
+  is built — this is the concrete reason this phase is sequenced after RAG rather than before it
+  (see `docs/roadmap.md`).
+- **History window size is the low-risk exception.** Moving `app.conversation.cache.max-msg` from
+  global config to a per-user/per-conversation value touches `ConversationHistoryService` and the
+  Redis-backed list size in `ConversationCacheService`, but doesn't involve secret storage or
+  provider resolution — it can be pulled forward ahead of the rest of this phase if useful.
+
+## Implementation status
+
+Not yet built. Planned after Phase 4 (RAG) — see `docs/roadmap.md` Phase 6 for the sequencing
+rationale.
+
+---
+
 # Deployment Architecture
 
 ## Local Development
