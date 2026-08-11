@@ -22,8 +22,9 @@ class AuthService(
         ?: throw IllegalStateException("PasswordEncoder returned a null hash")
 
     fun register(email: String, password: String): UserResponse {
-        if (userRepository.existsByEmail(email)) {
-            throw UserAlreadyExistsException("Email already registered: $email")
+        val normalizedEmail = normalizeEmail(email)
+        if (userRepository.existsByEmail(normalizedEmail)) {
+            throw UserAlreadyExistsException("Email already registered: $normalizedEmail")
         }
         // PasswordEncoder.encode is @Nullable per its JSpecify-annotated signature (no
         // implementation this app uses actually returns null), but the ?: keeps that contract
@@ -37,9 +38,9 @@ class AuthService(
         // letting it fall through to GlobalExceptionHandler's generic 500 (which would leak the
         // raw DB constraint message to the client).
         val user = try {
-            userRepository.save(User(email = email, passwordHash = passwordHash))
+            userRepository.save(User(email = normalizedEmail, passwordHash = passwordHash))
         } catch (e: DataIntegrityViolationException) {
-            throw UserAlreadyExistsException("Email already registered: $email")
+            throw UserAlreadyExistsException("Email already registered: $normalizedEmail")
         }
         return UserResponse(user.id!!, user.email, user.createdAt)
     }
@@ -47,7 +48,7 @@ class AuthService(
     fun login(email: String, password: String): AuthResponse {
         val sample = Timer.start(meterRegistry)
         try {
-            val user = userRepository.findByEmail(email).orElse(null)
+            val user = userRepository.findByEmail(normalizeEmail(email)).orElse(null)
 
             // Always run the BCrypt comparison, even on an unknown email (against
             // dummyPasswordHash) — an early return here would make login measurably faster for
@@ -67,6 +68,12 @@ class AuthService(
             throw e
         }
     }
+
+    // The unique index on User.email is case-sensitive, so without this "Foo@x.com" and
+    // "foo@x.com" would register as two distinct accounts. Applied identically on register and
+    // login (and nowhere else — email is stored normalized, so no call site downstream of these
+    // two ever needs to normalize again).
+    private fun normalizeEmail(email: String): String = email.trim().lowercase()
 
     // Same outcome-tagged-timer convention as history.cache.time / llm.generate.time (see
     // CLAUDE.md's "Metrics" section) rather than a bare duration.

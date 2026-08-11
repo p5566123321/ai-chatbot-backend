@@ -1,5 +1,6 @@
 package org.timpeng.chatbot.auth
 
+import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.PostMapping
@@ -12,13 +13,13 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(private val authService: AuthService) {
 
     @PostMapping("/register")
-    fun register(@RequestBody request: RegisterRequest): ResponseEntity<UserResponse> {
+    fun register(@Valid @RequestBody request: RegisterRequest): ResponseEntity<UserResponse> {
         val user = authService.register(request.email, request.password)
         return ResponseEntity.status(HttpStatus.CREATED).body(user)
     }
 
     @PostMapping("/login")
-    fun login(@RequestBody request: LoginRequest): AuthResponse {
+    fun login(@Valid @RequestBody request: LoginRequest): AuthResponse {
         return authService.login(request.email, request.password)
     }
 }

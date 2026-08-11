@@ -75,6 +75,20 @@ class AuthServiceTest {
         assertThrows<UserAlreadyExistsException> { authService.register(email, password) }
     }
 
+    @Test
+    fun `register normalizes email to lowercase and trimmed before checking existence and saving`() {
+        every { userRepository.existsByEmail(email) } returns false
+        every { passwordEncoder.encode(password) } returns passwordHash
+        val slot = slot<User>()
+        every { userRepository.save(capture(slot)) } answers { slot.captured.copy(id = 1L) }
+
+        val result = authService.register("  User@Example.com  ", password)
+
+        assertEquals(email, result.email)
+        assertEquals(email, slot.captured.email)
+        verify(exactly = 1) { userRepository.existsByEmail(email) }
+    }
+
     // login
 
     @Test
@@ -87,6 +101,19 @@ class AuthServiceTest {
         val result = authService.login(email, password)
 
         assertEquals("signed-token", result.token)
+    }
+
+    @Test
+    fun `login normalizes email to lowercase and trimmed before lookup`() {
+        val user = User(id = 1L, email = email, passwordHash = passwordHash, createdAt = LocalDateTime.now())
+        every { userRepository.findByEmail(email) } returns Optional.of(user)
+        every { passwordEncoder.matches(password, passwordHash) } returns true
+        every { jwtService.issue(1L) } returns IssuedToken("signed-token", Instant.now())
+
+        val result = authService.login("  User@Example.com  ", password)
+
+        assertEquals("signed-token", result.token)
+        verify(exactly = 1) { userRepository.findByEmail(email) }
     }
 
     @Test

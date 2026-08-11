@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.web.HttpMediaTypeNotSupportedException
+import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.timpeng.chatbot.auth.UserAlreadyExistsException
@@ -48,6 +49,27 @@ class GlobalExceptionHandler {
                     status = 400,
                     error = "Bad Request",
                     message = ex.message ?: "Invalid request"
+                )
+            )
+    }
+
+    // 400 - Bad Request (@Valid @RequestBody failures, e.g. RegisterRequest/LoginRequest)
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun handleMethodArgumentNotValid(ex: MethodArgumentNotValidException): ResponseEntity<ErrorResponse> {
+
+        val message = ex.bindingResult.fieldErrors
+            .joinToString("; ") { "${it.field}: ${it.defaultMessage}" }
+            .ifEmpty { "Invalid request" }
+
+        logger.warn("MethodArgumentNotValidException: {}", message)
+
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(
+                ErrorResponse(
+                    status = 400,
+                    error = "Bad Request",
+                    message = message
                 )
             )
     }
