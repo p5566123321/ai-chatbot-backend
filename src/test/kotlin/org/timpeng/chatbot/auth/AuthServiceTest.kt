@@ -27,9 +27,12 @@ class AuthServiceTest {
     private val email = "user@example.com"
     private val password = "hunter2"
     private val passwordHash = "hashed-password"
+    private val dummyHash = "dummy-hash"
 
     @BeforeEach
     fun setUp() {
+        // AuthService computes its timing-safety dummy hash at construction time (see login()).
+        every { passwordEncoder.encode("dummy-password-for-timing-safety") } returns dummyHash
         authService = AuthService(userRepository, passwordEncoder, jwtService, meterRegistry)
     }
 
@@ -89,8 +92,23 @@ class AuthServiceTest {
     @Test
     fun `login throws BadCredentialsException for an unknown email`() {
         every { userRepository.findByEmail(email) } returns Optional.empty()
+        every { passwordEncoder.matches(password, dummyHash) } returns false
 
         assertThrows<BadCredentialsException> { authService.login(email, password) }
+    }
+
+    // Timing side-channel: an early return on a lookup miss (skipping the BCrypt comparison
+    // entirely) would make login measurably faster for unregistered emails, letting response
+    // timing enumerate which emails have accounts. Asserting the dummy-hash comparison actually
+    // runs is what pins that behavior down, not just the exception type above.
+    @Test
+    fun `login runs the BCrypt comparison against a dummy hash even for an unknown email`() {
+        every { userRepository.findByEmail(email) } returns Optional.empty()
+        every { passwordEncoder.matches(password, dummyHash) } returns false
+
+        assertThrows<BadCredentialsException> { authService.login(email, password) }
+
+        verify(exactly = 1) { passwordEncoder.matches(password, dummyHash) }
     }
 
     @Test

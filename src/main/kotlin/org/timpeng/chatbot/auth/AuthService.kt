@@ -15,6 +15,12 @@ class AuthService(
     private val meterRegistry: MeterRegistry,
 ) {
 
+    // A password hash to run the BCrypt comparison against when the email lookup misses, so an
+    // unknown email pays the same ~100ms BCrypt cost a known email always pays — see login()'s
+    // comment. Computed once at construction, not per-request.
+    private val dummyPasswordHash: String = passwordEncoder.encode("dummy-password-for-timing-safety")
+        ?: throw IllegalStateException("PasswordEncoder returned a null hash")
+
     fun register(email: String, password: String): UserResponse {
         if (userRepository.existsByEmail(email)) {
             throw UserAlreadyExistsException("Email already registered: $email")
@@ -41,10 +47,15 @@ class AuthService(
     fun login(email: String, password: String): AuthResponse {
         val sample = Timer.start(meterRegistry)
         try {
-            val user = userRepository.findByEmail(email)
-                .orElseThrow { BadCredentialsException("Invalid email or password") }
+            val user = userRepository.findByEmail(email).orElse(null)
 
-            if (!passwordEncoder.matches(password, user.passwordHash)) {
+            // Always run the BCrypt comparison, even on an unknown email (against
+            // dummyPasswordHash) — an early return here would make login measurably faster for
+            // unregistered emails than registered ones, letting response timing enumerate which
+            // emails have accounts even though the status/body are identical either way.
+            val passwordMatches = passwordEncoder.matches(password, user?.passwordHash ?: dummyPasswordHash)
+
+            if (user == null || !passwordMatches) {
                 throw BadCredentialsException("Invalid email or password")
             }
 
