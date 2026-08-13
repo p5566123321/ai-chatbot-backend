@@ -175,6 +175,11 @@ existing Grafana dashboard (`observability/`) and the benchmark protocol in ADR-
 SYSTEM, `content: TEXT`, `createdAt`). `SYSTEM` is reserved for future system-prompt/RAG injection
 and isn't sent to Gemini (`GeminiProvider.buildContents` filters to USER/ASSISTANT only).
 
+Schema is Flyway-managed (ADR-008): `src/main/resources/db/migration/Vn__*.sql`, applied
+automatically on startup ahead of Hibernate's `ddl-auto=validate` check. Add a new `Vn__*.sql` for
+any entity change — Hibernate no longer generates DDL itself, so editing an `@Entity` alone won't
+touch the database.
+
 ## Error handling
 
 All exceptions are mapped centrally in `GlobalExceptionHandler` to a single `ErrorResponse` shape

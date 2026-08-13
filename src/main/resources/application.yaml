@@ -12,9 +12,18 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  flyway:
+    # Onboards every database that already has the ddl-auto=update-era schema (see
+    # docs/decision/008): Flyway just records V1 as already applied instead of running it, since
+    # baseline-version matches V1__baseline.sql's version exactly. Only a genuinely empty database
+    # (fresh dev setup, CI) actually executes V1.
+    baseline-on-migrate: true
+    baseline-version: 1
   jpa:
     hibernate:
-      ddl-auto: update
+      # Flyway owns schema changes now — Hibernate only checks entities match what Flyway
+      # created, it no longer generates DDL itself (see docs/decision/008).
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true

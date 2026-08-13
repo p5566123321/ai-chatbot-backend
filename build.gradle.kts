@@ -28,6 +28,15 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-redis:4.1.0")
+
+    // Schema migrations (replaces hibernate.ddl-auto: update — see docs/decision/008). Spring
+    // Boot 4 splits Flyway's autoconfiguration into its own module (spring-boot-flyway) rather
+    // than bundling it into spring-boot-autoconfigure, so that's needed alongside flyway-core
+    // itself or FlywayAutoConfiguration never registers. Flyway 10+ also splits DB-specific
+    // dialect support out of flyway-core, hence flyway-database-postgresql on top of that.
+    implementation("org.springframework.boot:spring-boot-flyway")
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
     implementation("tools.jackson.module:jackson-module-kotlin")
