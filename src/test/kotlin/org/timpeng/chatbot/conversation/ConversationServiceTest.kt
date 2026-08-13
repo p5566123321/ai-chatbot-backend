@@ -11,6 +11,7 @@ import org.timpeng.chatbot.chat.ChatResponse
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.ConversationNotFoundException
 import org.timpeng.chatbot.llm.LlmResponse
 import org.timpeng.chatbot.redis.ConversationCacheService
 import java.util.*

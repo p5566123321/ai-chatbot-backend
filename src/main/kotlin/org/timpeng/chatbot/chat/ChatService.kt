@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.timpeng.chatbot.conversation.ConversationService
+import org.timpeng.chatbot.exception.ChatException
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.queue.JobQueue
 import org.timpeng.chatbot.redis.GeneratingStatusService

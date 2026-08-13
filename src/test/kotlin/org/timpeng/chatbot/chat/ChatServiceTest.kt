@@ -13,6 +13,7 @@ import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.ConversationService
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.ChatException
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.llm.LlmResponse
 import org.timpeng.chatbot.queue.JobQueue

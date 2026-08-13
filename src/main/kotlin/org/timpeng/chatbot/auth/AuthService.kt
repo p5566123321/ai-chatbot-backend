@@ -6,6 +6,11 @@ import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
+import org.timpeng.chatbot.auth.jwt.JwtService
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.exception.UserAlreadyExistsException
+import org.timpeng.chatbot.auth.user.UserRepository
+import org.timpeng.chatbot.auth.user.UserResponse
 
 @Service
 class AuthService(

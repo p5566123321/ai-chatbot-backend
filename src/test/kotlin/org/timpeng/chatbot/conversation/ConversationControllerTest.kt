@@ -12,9 +12,10 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
-import org.timpeng.chatbot.auth.JwtAuthenticationToken
+import org.timpeng.chatbot.auth.jwt.JwtAuthenticationToken
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.ConversationNotFoundException
 import java.time.LocalDateTime
 
 // SecurityConfig's real filter chain isn't wired into this @WebMvcTest slice, so @CurrentUserId
@@ -57,7 +58,7 @@ class ConversationControllerTest {
     @Test
     fun `GET messages returns 404 for unknown conversation`() {
         every { conversationService.requireOwnedConversation("missing", ownerId) } throws
-            ConversationNotFoundException("Conversation not found: missing")
+                ConversationNotFoundException("Conversation not found: missing")
 
         mockMvc.perform(get("/api/conversations/missing/messages"))
             .andExpect(status().isNotFound)
@@ -66,7 +67,7 @@ class ConversationControllerTest {
     @Test
     fun `GET messages returns 404 for a conversation owned by someone else`() {
         every { conversationService.requireOwnedConversation("not-mine", ownerId) } throws
-            ConversationNotFoundException("Conversation not found: not-mine")
+                ConversationNotFoundException("Conversation not found: not-mine")
 
         mockMvc.perform(get("/api/conversations/not-mine/messages"))
             .andExpect(status().isNotFound)

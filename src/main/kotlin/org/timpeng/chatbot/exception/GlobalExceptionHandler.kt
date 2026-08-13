@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.global
+package org.timpeng.chatbot.exception
 
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpStatus
@@ -9,10 +9,6 @@ import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
-import org.timpeng.chatbot.auth.UserAlreadyExistsException
-import org.timpeng.chatbot.chat.ChatController
-import org.timpeng.chatbot.llm.LlmException
-import org.timpeng.chatbot.conversation.ConversationNotFoundException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {

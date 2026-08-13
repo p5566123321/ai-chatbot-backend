@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.ConversationNotFoundException
 import org.timpeng.chatbot.redis.ConversationCacheService
 import kotlin.test.assertEquals
 
@@ -63,7 +64,7 @@ class CachedConversationHistoryServiceTest {
     fun `getHistory propagates ConversationNotFoundException from the database delegate on a cache miss`() {
         every { conversationCacheService.getChatHistory(conversationId) } returns emptyList()
         every { delegate.getHistory(conversationId) } throws
-            ConversationNotFoundException("Conversation not found: $conversationId")
+                ConversationNotFoundException("Conversation not found: $conversationId")
 
         assertThrows<ConversationNotFoundException> {
             cachedConversationHistoryService.getHistory(conversationId)

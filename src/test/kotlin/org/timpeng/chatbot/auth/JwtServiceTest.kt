@@ -3,6 +3,8 @@ package org.timpeng.chatbot.auth
 import io.jsonwebtoken.Jwts
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.timpeng.chatbot.auth.jwt.JwtProperties
+import org.timpeng.chatbot.auth.jwt.JwtService
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
@@ -46,7 +48,11 @@ class JwtServiceTest {
     @Test
     fun `validateToken returns null for a token signed with a different key`() {
         val otherService = JwtService(
-            JwtProperties(secret = "a-completely-different-secret-key-also-at-least-32-bytes-long", issuer = "test-issuer", expirationMs = 3_600_000)
+            JwtProperties(
+                secret = "a-completely-different-secret-key-also-at-least-32-bytes-long",
+                issuer = "test-issuer",
+                expirationMs = 3_600_000
+            )
         )
         val forged = otherService.issue(userId = 1L)
 

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.LlmException
 import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

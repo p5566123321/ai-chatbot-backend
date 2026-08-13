@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
+import org.timpeng.chatbot.exception.ConversationNotFoundException
 
 /**
  * Loads conversation history straight from Postgres — the source of truth. This is the only

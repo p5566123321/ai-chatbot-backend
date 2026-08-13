@@ -7,10 +7,12 @@ import org.springframework.web.bind.support.WebDataBinderFactory
 import org.springframework.web.context.request.NativeWebRequest
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.method.support.ModelAndViewContainer
+import org.timpeng.chatbot.config.WebConfig
+import org.timpeng.chatbot.filter.JwtAuthenticationFilter
 
 /**
  * Resolves `@CurrentUserId` parameters from whatever [JwtAuthenticationFilter] put in the
- * `SecurityContext`. Registered via [org.timpeng.chatbot.config.WebConfig]. Throwing when the
+ * `SecurityContext`. Registered via [WebConfig]. Throwing when the
  * principal is missing/not a `Long` is deliberate: every endpoint that declares this parameter is
  * also behind `SecurityConfig`'s `authenticated()` rule, so hitting this path means that
  * invariant broke, not that the caller sent a bad request.

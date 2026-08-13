@@ -7,7 +7,7 @@ import org.timpeng.chatbot.conversation.ConversationHistoryService
 import org.timpeng.chatbot.conversation.ConversationService
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.llm.LlmProvider
-import org.timpeng.chatbot.llm.StreamCancelledException
+import org.timpeng.chatbot.exception.StreamCancelledException
 import org.timpeng.chatbot.queue.Job
 import org.timpeng.chatbot.queue.JobHandler
 import org.timpeng.chatbot.redis.GeneratingStatusService

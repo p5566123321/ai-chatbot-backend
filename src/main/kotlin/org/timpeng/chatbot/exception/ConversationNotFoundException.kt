@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.conversation
+package org.timpeng.chatbot.exception
 
 class ConversationNotFoundException: RuntimeException {
     constructor(message: String) : super(message)

@@ -7,11 +7,11 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.http.MediaType
 import org.springframework.test.web.reactive.server.WebTestClient
-import org.timpeng.chatbot.auth.JwtService
-import org.timpeng.chatbot.auth.User
-import org.timpeng.chatbot.auth.UserRepository
+import org.timpeng.chatbot.auth.jwt.JwtService
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.ConversationRepository
-import org.timpeng.chatbot.global.ErrorResponse
+import org.timpeng.chatbot.exception.ErrorResponse
 import java.util.UUID
 import kotlin.test.assertEquals
 

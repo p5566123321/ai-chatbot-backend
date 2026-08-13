@@ -10,6 +10,7 @@ import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
+import org.timpeng.chatbot.exception.ConversationNotFoundException
 import java.util.Optional
 import kotlin.test.assertEquals
 

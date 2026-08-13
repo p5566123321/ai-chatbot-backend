@@ -11,6 +11,11 @@ import org.junit.jupiter.api.assertThrows
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.security.authentication.BadCredentialsException
 import org.springframework.security.crypto.password.PasswordEncoder
+import org.timpeng.chatbot.auth.jwt.IssuedToken
+import org.timpeng.chatbot.auth.jwt.JwtService
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.exception.UserAlreadyExistsException
+import org.timpeng.chatbot.auth.user.UserRepository
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional

@@ -16,8 +16,8 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
-import org.timpeng.chatbot.auth.JwtAuthenticationToken
-import org.timpeng.chatbot.llm.LlmException
+import org.timpeng.chatbot.auth.jwt.JwtAuthenticationToken
+import org.timpeng.chatbot.exception.LlmException
 import tools.jackson.databind.ObjectMapper
 
 

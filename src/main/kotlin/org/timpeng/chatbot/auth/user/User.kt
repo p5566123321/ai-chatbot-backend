@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.auth
+package org.timpeng.chatbot.auth.user
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity

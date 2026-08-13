@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.global
+package org.timpeng.chatbot.exception
 
 data class ErrorResponse(
     val status: Int,

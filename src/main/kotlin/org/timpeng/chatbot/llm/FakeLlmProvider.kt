@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.timpeng.chatbot.conversation.message.Message
+import org.timpeng.chatbot.exception.StreamCancelledException
 import java.util.concurrent.TimeUnit
 
 private val FAKE_CHUNKS = listOf(

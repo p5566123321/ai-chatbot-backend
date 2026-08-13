@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.auth
+package org.timpeng.chatbot.auth.user
 
 import java.time.LocalDateTime
 

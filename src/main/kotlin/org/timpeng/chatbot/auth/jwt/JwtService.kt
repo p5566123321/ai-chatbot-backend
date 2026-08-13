@@ -1,4 +1,4 @@
-package org.timpeng.chatbot.auth
+package org.timpeng.chatbot.auth.jwt
 
 import io.jsonwebtoken.Claims
 import io.jsonwebtoken.JwtException

@@ -8,10 +8,10 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter
-import org.timpeng.chatbot.auth.JwtAuthenticationFilter
-import org.timpeng.chatbot.auth.JwtService
+import org.timpeng.chatbot.filter.JwtAuthenticationFilter
+import org.timpeng.chatbot.auth.jwt.JwtService
 import tools.jackson.databind.ObjectMapper
-import org.timpeng.chatbot.global.ErrorResponse
+import org.timpeng.chatbot.exception.ErrorResponse
 
 /**
  * Stateless JWT auth (ADR-007). No CSRF (no cookie-based session — tokens travel in the
