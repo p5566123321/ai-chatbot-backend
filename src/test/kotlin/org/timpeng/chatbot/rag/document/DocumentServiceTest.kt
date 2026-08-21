@@ -37,7 +37,7 @@ class DocumentServiceTest {
     // upload
 
     @Test
-    fun `upload persists the document with PENDING status and the caller as owner`() = runBlocking {
+    fun `upload persists the document with READY status and the caller as owner once processing succeeds`() = runBlocking {
         val file = MockMultipartFile("file", "notes.txt", "text/plain", "hello world".toByteArray())
         val slot = slot<DocumentJpaEntity>()
         every { documentRepository.save(capture(slot)) } answers { slot.captured }
@@ -47,8 +47,21 @@ class DocumentServiceTest {
 
         assertEquals("notes.txt", slot.captured.title)
         assertEquals("hello world", slot.captured.content)
-        assertEquals(DocumentStatus.PENDING, slot.captured.status)
+        assertEquals(DocumentStatus.READY, slot.captured.status)
         assertEquals(ownerId, slot.captured.userId)
+        assertEquals(slot.captured, result)
+    }
+
+    @Test
+    fun `upload marks the document FAILED when the pipeline throws`() = runBlocking {
+        val file = MockMultipartFile("file", "notes.txt", "text/plain", "hello world".toByteArray())
+        val slot = slot<DocumentJpaEntity>()
+        every { documentRepository.save(capture(slot)) } answers { slot.captured }
+        every { textSplitter.split(any()) } throws RuntimeException("boom")
+
+        val result = documentService.upload(file, ownerId)
+
+        assertEquals(DocumentStatus.FAILED, slot.captured.status)
         assertEquals(slot.captured, result)
     }
 

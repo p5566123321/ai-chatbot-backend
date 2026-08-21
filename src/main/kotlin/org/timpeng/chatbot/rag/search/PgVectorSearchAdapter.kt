@@ -47,6 +47,4 @@ class PgVectorSearchAdapter(
         chunkRepository.deleteByDocumentId(documentId)
     }
 
-    fun FloatArray.toPgVectorString(): String =
-        this.joinToString(prefix = "[", postfix = "]") { it.toString() }
 }

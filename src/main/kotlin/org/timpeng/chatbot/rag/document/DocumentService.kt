@@ -15,10 +15,11 @@ import java.util.*
  * validate and persist synchronously so a bad upload 400s/404s immediately instead of failing
  * deep inside an async pipeline.
  *
- * [upload] runs the split -> embed -> upsert pipeline (TextSplitter / EmbeddingProvider /
- * VectorSearchPort) synchronously and inline. It never advances [DocumentStatus] past `PENDING`
- * — status transitions and moving this behind the job queue (mirroring ChatQueueConfig, once it
- * reliably takes longer than a request) are still TODO; see the TODO in [upload].
+ * [upload] and [replace] both run the split -> embed -> upsert pipeline (TextSplitter /
+ * EmbeddingProvider / VectorSearchPort) synchronously and inline, advancing [DocumentStatus]
+ * PENDING -> PROCESSING -> READY/FAILED as they go. Moving this behind the job queue (mirroring
+ * ChatQueueConfig, once it reliably takes longer than a request) is still TODO; see the TODO in
+ * [upload].
  */
 @Service
 class DocumentService(
@@ -58,21 +59,39 @@ class DocumentService(
         // this behind the job queue (mirroring ChatQueueConfig) once it reliably takes longer
         // than a request — DocumentStatus/GET-by-id already exist to support polling the same way
         // ChatController.streamStatus does for chat.
-        val contentList = textSplitter.split(document.content)
-        for ((index, chunkContent) in contentList.withIndex()) {
-            val array = embeddingProvider.embed(chunkContent)
-            val input = DocumentChunkInput(
-                content = chunkContent,
-                documentId = document.id,
-                embedding = array,
-                chunkIndex = index,
-                // Naive text splitting has no page concept yet (see class kdoc) — 0 until a
-                // format-aware splitter tracks source pages.
-                pageNumber = 0,
-                // Rough proxy until a real tokenizer is wired in — word count, not token count.
-                tokenCount = chunkContent.trim().split(Regex("\\s+")).size,
-            )
-            vectorSearchPort.upsertChunk(input)
+        try {
+
+            document.status = DocumentStatus.PROCESSING
+
+            documentRepository.save(document)
+
+            val contentList = textSplitter.split(document.content)
+
+            document.totalChunks = contentList.size
+
+            for ((index, chunkContent) in contentList.withIndex()) {
+                val array = embeddingProvider.embed(chunkContent)
+
+                val input = DocumentChunkInput(
+                    content = chunkContent,
+                    documentId = document.id,
+                    embedding = array,
+                    chunkIndex = index,
+                    // Naive text splitting has no page concept yet (see class kdoc) — 0 until a
+                    // format-aware splitter tracks source pages.
+                    pageNumber = 0,
+                    // Rough proxy until a real tokenizer is wired in — word count, not token count.
+                    tokenCount = chunkContent.trim().split(Regex("\\s+")).size,
+                )
+                vectorSearchPort.upsertChunk(input)
+            }
+
+            document.status = DocumentStatus.READY
+            documentRepository.save(document)
+        } catch (e: Exception) {
+            logger.error("Document processing failed: uuid={}", document.uuid, e)
+            document.status = DocumentStatus.FAILED
+            documentRepository.save(document)
         }
 
         return document
@@ -124,23 +143,35 @@ class DocumentService(
         document.title = title
         document.content = content
         document.status = DocumentStatus.PENDING
+        documentRepository.save(document)
 
-        // Same split -> embed -> upsert pipeline as upload (see its TODO: still synchronous/inline,
-        // still never advances status past PENDING).
-        val contentList = textSplitter.split(document.content)
-        for ((index, chunkContent) in contentList.withIndex()) {
-            val array = embeddingProvider.embed(chunkContent)
-            val input = DocumentChunkInput(
-                content = chunkContent,
-                documentId = document.id,
-                embedding = array,
-                chunkIndex = index,
-                pageNumber = 0,
-                tokenCount = chunkContent.trim().split(Regex("\\s+")).size,
-            )
-            vectorSearchPort.upsertChunk(input)
+        // Same split -> embed -> upsert pipeline as upload (see its TODO: still synchronous/inline),
+        // advancing status PENDING -> PROCESSING -> READY/FAILED the same way.
+        try {
+            document.status = DocumentStatus.PROCESSING
+            documentRepository.save(document)
+
+            val contentList = textSplitter.split(document.content)
+            document.totalChunks = contentList.size
+
+            for ((index, chunkContent) in contentList.withIndex()) {
+                val array = embeddingProvider.embed(chunkContent)
+                val input = DocumentChunkInput(
+                    content = chunkContent,
+                    documentId = document.id,
+                    embedding = array,
+                    chunkIndex = index,
+                    pageNumber = 0,
+                    tokenCount = chunkContent.trim().split(Regex("\\s+")).size,
+                )
+                vectorSearchPort.upsertChunk(input)
+            }
+
+            document.status = DocumentStatus.READY
+        } catch (e: Exception) {
+            logger.error("Document processing failed: uuid={}", document.uuid, e)
+            document.status = DocumentStatus.FAILED
         }
-        document.totalChunks = contentList.size
 
         logger.info(
             "Document replaced: uuid={}, ownerId={}, sizeBytes={}",
