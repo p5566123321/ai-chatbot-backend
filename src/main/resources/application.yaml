@@ -1,6 +1,14 @@
 spring:
   application:
     name: chatbot
+  servlet:
+    multipart:
+      # Backs DocumentController's upload/replace (@RequestParam("file") MultipartFile). Spring
+      # Boot's own defaults are 1MB/10MB — too small for real documents — so both are set
+      # explicitly here rather than left implicit. max-request-size only matters if a request
+      # could carry more than one file; kept >= max-file-size for that reason.
+      max-file-size: ${DOCUMENT_MAX_FILE_SIZE:20MB}
+      max-request-size: ${DOCUMENT_MAX_REQUEST_SIZE:20MB}
   data:
     redis:
       host: ${REDIS_HOST}
@@ -40,8 +48,33 @@ app:
     gemini:
       model: ${GEMINI_MODEL}
       timeout-ms: ${GEMINI_TIMEOUT_MS:30000}
+      embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}
+      embedding-timeout-ms: ${GEMINI_EMBEDDING_TIMEOUT_MS:30000}
+      # Must match document_chunk.embedding's vector(N) column (V2__enable_pgvector.sql /
+      # DocumentChunkJpaEntity) — gemini-embedding-2 natively returns 3072 dims, so this is passed
+      # as outputDimensionality on every embed call to truncate (Matryoshka representation) down
+      # to what the column actually stores. Changing this without a matching migration will start
+      # failing inserts with a Postgres "expected N dimensions" error.
+      embedding-dimensions: ${GEMINI_EMBEDDING_DIMENSIONS:768}
     fake:
       chunk-delay-ms: ${FAKE_LLM_CHUNK_DELAY_MS:20}
+  embedding:
+    # Only one EmbeddingProvider implementation exists today (GeminiEmbeddingProvider) — this
+    # mirrors app.llm.provider's shape so a fake/alternate provider slots in the same way later.
+    provider: ${EMBEDDING_PROVIDER:gemini}
+  rag:
+    splitter:
+      # RecursiveCharacterTextSplitter — 字元數，非 token 數。800/100 是抓大概值，之後若量測到
+      # 檢索品質不理想（chunk 太碎或太混雜）再依實際文件型態調整。
+      chunk-size: ${RAG_SPLITTER_CHUNK_SIZE:800}
+      chunk-overlap: ${RAG_SPLITTER_CHUNK_OVERLAP:100}
+    search:
+      # RagService.buildPrompt retrieval tuning. top-k is how many candidate chunks pgvector
+      # returns; similarity-threshold (cosine similarity, range [-1, 1]) is the minimum score a
+      # candidate must clear to survive into the prompt — 0.0 only drops chunks that are pointing
+      # away from the query, i.e. effectively no filtering, until measured against real traffic.
+      top-k: ${RAG_SEARCH_TOP_K:5}
+      similarity-threshold: ${RAG_SEARCH_SIMILARITY_THRESHOLD:0.0}
   sse:
     timeout-ms: ${SSE_TIMEOUT_MS:60000}
   conversation:

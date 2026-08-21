@@ -9,6 +9,7 @@ import org.springframework.web.HttpMediaTypeNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -20,6 +21,23 @@ class GlobalExceptionHandler {
     fun handleConversationNotFound(ex: ConversationNotFoundException): ResponseEntity<ErrorResponse> {
 
         logger.warn("Conversation not found: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.NOT_FOUND)
+            .body(
+                ErrorResponse(
+                    status = 404,
+                    error = "Not Found",
+                    message = ex.message ?: "Resource not found"
+                )
+            )
+    }
+
+    // 404 - Not Found
+    @ExceptionHandler(DocumentNotFoundException::class)
+    fun handleDocumentNotFound(ex: DocumentNotFoundException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("Document not found: {}", ex.message)
 
         return ResponseEntity
             .status(HttpStatus.NOT_FOUND)
@@ -98,6 +116,24 @@ class GlobalExceptionHandler {
                     status = 415,
                     error = "Unsupported Media Type",
                     message = ex.message ?: "Content-Type not supported"
+                )
+            )
+    }
+
+    // 413 - Payload Too Large (DocumentController upload/replace exceeding
+    // spring.servlet.multipart.max-file-size/max-request-size)
+    @ExceptionHandler(MaxUploadSizeExceededException::class)
+    fun handleMaxUploadSizeExceeded(ex: MaxUploadSizeExceededException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("MaxUploadSizeExceededException: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.PAYLOAD_TOO_LARGE)
+            .body(
+                ErrorResponse(
+                    status = 413,
+                    error = "Payload Too Large",
+                    message = "Uploaded file exceeds the maximum allowed size"
                 )
             )
     }

@@ -227,8 +227,26 @@ User Query → Embedding → Retrieval
 |---|---|
 | Embedding Model | OpenAI / Gemini |
 | Vector DB | pgvector / Pinecone |
-| Text Splitting | LangChain |
+| Text Splitting | Custom recursive-character splitter, see [ADR-009](decision/009-rag-text-splitting.md) |
 | Storage | PostgreSQL |
+
+## Implementation status
+
+**Built end to end.** Ingestion: `DocumentController`/`DocumentService` (`POST`/`PATCH
+/api/documents`) run the upload → `TextSplitter.split` → `EmbeddingProvider.embed` →
+`VectorSearchPort.upsertChunk` pipeline synchronously and inline — it never advances
+`DocumentStatus` past `PENDING` yet, and moving it behind the job queue (mirroring
+`ChatQueueConfig`) is still TODO once ingestion reliably takes longer than a request. Retrieval:
+`RagService.buildPrompt` embeds the user's query and calls `VectorSearchPort.findSimilarChunks`
+(`PgVectorSearchAdapter`/pgvector, ADR-009's Context notes this and the embedding-model row are
+effectively already settled by what got built, even without their own ADR) — the number of
+candidates (`top-k`) and the minimum similarity score a chunk must clear are both configurable
+(`app.rag.search.top-k`/`similarity-threshold`, env `RAG_SEARCH_TOP_K`/
+`RAG_SEARCH_SIMILARITY_THRESHOLD`). `GeminiProvider` calls `RagService.buildPrompt` to augment only
+the final user turn before sending it to Gemini. Text splitting is decided and implemented —
+`org.timpeng.chatbot.rag.splitting.TextSplitter`/`RecursiveCharacterTextSplitter`, see
+[ADR-009](decision/009-rag-text-splitting.md) for why a custom implementation over LangChain/
+`langchain4j`.
 
 ---
 
