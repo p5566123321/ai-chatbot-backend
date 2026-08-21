@@ -37,10 +37,15 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-flyway")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
+    implementation("com.pgvector:pgvector:0.1.6")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core")
+    // Spring MVC's suspend-controller support (DocumentController.upload) bridges through
+    // kotlinx-coroutines-reactor's Mono conversion at runtime — without it on the classpath,
+    // every call 500s with NoClassDefFoundError(kotlinx/coroutines/reactor/MonoKt).
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
     implementation("tools.jackson.module:jackson-module-kotlin")
-    implementation("com.google.genai:google-genai:1.0.0")
+    implementation("com.google.genai:google-genai:1.66.0")
 
     // JWT signing/parsing (ADR-007). jjwt-gson, not jjwt-jackson: jjwt-jackson depends on classic
     // com.fasterxml.jackson, which would sit alongside this project's Jackson 3
