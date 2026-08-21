@@ -94,8 +94,8 @@ class ChatSseIntegrationTest {
 
     @Test
     fun `stream endpoint sends each chunk as an SSE event`() {
-        every { llmProvider.streamGenerate(any(), any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(any(), any(), any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("Hello", " ", "world").forEach(onChunk)
         }
 
@@ -120,8 +120,8 @@ class ChatSseIntegrationTest {
 
     @Test
     fun `stream failure after chunks persists partial assistant message and sends an error event`() {
-        every { llmProvider.streamGenerate(any(), any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(any(), any(), any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("Hello", " ", "world").forEach(onChunk)
             throw RuntimeException("boom")
         }
@@ -157,7 +157,7 @@ class ChatSseIntegrationTest {
 
     @Test
     fun `stream failure before any chunk persists nothing but still sends an error event`() {
-        every { llmProvider.streamGenerate(any(), any()) } throws RuntimeException("boom")
+        every { llmProvider.streamGenerate(any(), any(), any()) } throws RuntimeException("boom")
 
         // The response is now committed at 200 OK as soon as the emitter is returned (generation
         // runs off the request thread), so a failure with zero chunks sent no longer surfaces as
@@ -222,8 +222,8 @@ class ChatSseIntegrationTest {
 
     @Test
     fun `stream status reports progress live during generation and clears once it finishes`() {
-        every { llmProvider.streamGenerate(any(), any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(any(), any(), any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             onChunk("Hello")
             Thread.sleep(700) // exceed the 400ms progress-flush throttle before the next chunk
             onChunk(" world")

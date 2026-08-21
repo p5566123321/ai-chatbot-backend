@@ -41,7 +41,7 @@ class FakeLlmProvider(
     @Value("\${app.llm.fake.chunk-delay-ms}")
     private val chunkDelayMs = 20L
 
-    override fun generate(messages: List<Message>): LlmResponse {
+    override fun generate(messages: List<Message>, ownerId: Long): LlmResponse {
         val sample = Timer.start(meterRegistry)
         var outcome = "success"
         try {
@@ -66,7 +66,7 @@ class FakeLlmProvider(
         }
     }
 
-    override fun streamGenerate(messagesWithUser: List<Message>, onChunk: (String) -> Unit) {
+    override fun streamGenerate(messagesWithUser: List<Message>, ownerId: Long, onChunk: (String) -> Unit) {
         val sample = Timer.start(meterRegistry)
         val start = System.nanoTime()
         var firstTokenLatencyMs: Long? = null

@@ -32,6 +32,7 @@ class ChatJobHandlerTest {
     private val emitter: SseEmitter = mockk(relaxed = true)
 
     private val conversationId = "test-uuid"
+    private val ownerId = 1L
     private val conversation = Conversation(id = 1L, uuid = conversationId)
     private val history = listOf(
         Message(id = 1L, conversation = conversation, role = Role.USER, content = "hello")
@@ -53,12 +54,12 @@ class ChatJobHandlerTest {
     private fun assistantMessage(content: String) =
         Message(id = 3L, conversation = conversation, role = Role.ASSISTANT, content = content)
 
-    private fun job() = Job(id = "1-1", payload = ChatJobPayload(conversationId), attempt = 1)
+    private fun job() = Job(id = "1-1", payload = ChatJobPayload(conversationId, ownerId), attempt = 1)
 
     @Test
     fun `handle sends each chunk as an SSE event`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("this", "is", "test", "response").forEach(onChunk)
         }
         every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
@@ -72,8 +73,8 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle completes the emitter after all chunks sent`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("this", "is", "test", "response").forEach(onChunk)
         }
         every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
@@ -86,7 +87,7 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle sends an error event and completes gracefully when llmProvider throws`() {
-        every { llmProvider.streamGenerate(history, any()) } throws RuntimeException("LLM unavailable")
+        every { llmProvider.streamGenerate(history, ownerId, any()) } throws RuntimeException("LLM unavailable")
 
         handler.handle(job())
 
@@ -103,8 +104,8 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle sends chunks in order`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("A", "B", "C").forEach(onChunk)
         }
         every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
@@ -122,8 +123,8 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle completes with error if emitter throws IOException`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("A", "B", "C").forEach(onChunk)
         }
         every { emitter.send(any<SseEmitter.SseEventBuilder>()) } throws IOException("client disconnected")
@@ -137,8 +138,8 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle clears generating status after a successful finish`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("this", "is", "test").forEach(onChunk)
         }
         every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
@@ -151,7 +152,7 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle clears generating status even when llmProvider throws`() {
-        every { llmProvider.streamGenerate(history, any()) } throws RuntimeException("LLM unavailable")
+        every { llmProvider.streamGenerate(history, ownerId, any()) } throws RuntimeException("LLM unavailable")
 
         handler.handle(job())
 
@@ -160,8 +161,8 @@ class ChatJobHandlerTest {
 
     @Test
     fun `handle removes the emitter from the registry once done`() {
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             listOf("A").forEach(onChunk)
         }
         every { conversationService.saveMessage(conversationId, Role.ASSISTANT, any()) } returns
@@ -178,7 +179,7 @@ class ChatJobHandlerTest {
 
         handler.handle(job())
 
-        verify(exactly = 0) { llmProvider.streamGenerate(any(), any()) }
+        verify(exactly = 0) { llmProvider.streamGenerate(any(), any(), any()) }
         verify { generatingStatusService.clearGenerating(conversationId) }
     }
 
@@ -186,8 +187,8 @@ class ChatJobHandlerTest {
     fun `handle does not stream once the handle is marked cancelled`() {
         val handle = emitterRegistry.get(conversationId)!!
         handle.cancelled.set(true)
-        every { llmProvider.streamGenerate(history, any()) } answers {
-            val onChunk = secondArg<(String) -> Unit>()
+        every { llmProvider.streamGenerate(history, ownerId, any()) } answers {
+            val onChunk = thirdArg<(String) -> Unit>()
             onChunk("A") // first chunk should throw StreamCancelledException and stop here
         }
 

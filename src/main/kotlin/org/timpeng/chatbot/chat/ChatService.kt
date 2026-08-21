@@ -28,7 +28,7 @@ class ChatService(
         val messages = conversationService.saveUserMessage(conversationId, userMsg)
 
         val llmResponse = runCatching {
-            llmProvider.generate(messages)
+            llmProvider.generate(messages, ownerId)
         }.getOrElse { e ->
             logger.error("LLM API failed", e)
             throw ChatException("AI service unable to response.", e)
@@ -66,7 +66,7 @@ class ChatService(
         // above are driven by the container's own async listener rather than only firing when a
         // write happens to fail.
         generatingStatusService.markGenerating(conversationId)
-        chatJobQueue.enqueue(ChatJobPayload(conversationId))
+        chatJobQueue.enqueue(ChatJobPayload(conversationId, ownerId))
     }
 
     fun streamStatus(conversationId: String, ownerId: Long): StreamStatusResponse {

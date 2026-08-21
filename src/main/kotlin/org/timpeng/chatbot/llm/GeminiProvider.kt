@@ -3,26 +3,25 @@ package org.timpeng.chatbot.llm
 import com.google.genai.Models
 import com.google.genai.ResponseStream
 import com.google.genai.types.Content
-import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.exception.LlmException
 import org.timpeng.chatbot.exception.StreamCancelledException
+import org.timpeng.chatbot.rag.RagService
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.collections.mutableListOf
 import kotlin.time.measureTimedValue
 
 @Service
@@ -30,6 +29,7 @@ import kotlin.time.measureTimedValue
 class GeminiProvider(
     private val models: Models,
     private val meterRegistry: MeterRegistry,
+    private val ragService: RagService
 ) : LlmProvider {
 
     private val logger = LoggerFactory.getLogger(GeminiProvider::class.java)
@@ -53,9 +53,10 @@ class GeminiProvider(
     }
 
     override fun generate(
-        messages: List<Message>
+        messages: List<Message>,
+        ownerId: Long,
     ): LlmResponse {
-        val contents = buildContents(messages)
+        val contents = buildContents(messages, ownerId)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -110,8 +111,8 @@ class GeminiProvider(
         }
     }
 
-    override fun streamGenerate(messagesWithUser: List<Message>, onChunk: (String) -> Unit) {
-        val contents = buildContents(messagesWithUser)
+    override fun streamGenerate(messagesWithUser: List<Message>, ownerId: Long, onChunk: (String) -> Unit) {
+        val contents = buildContents(messagesWithUser, ownerId)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -177,19 +178,36 @@ class GeminiProvider(
         }
     }
 
-    fun buildContents(messages: List<Message>): List<Content> {
+    /**
+     * `generate`/`streamGenerate` are non-suspend (see [LlmProvider]), but [RagService.buildPrompt]
+     * is suspend (it calls the suspend `EmbeddingProvider.embed`) — bridged with [runBlocking]
+     * rather than propagating suspend through the whole `LlmProvider` call chain, consistent with
+     * this class already being fully blocking (`callWithTimeout` uses `CompletableFuture.get`).
+     */
+    private fun buildContents(messages: List<Message>, ownerId: Long): List<Content> {
         val contents = mutableListOf<Content>()
 
-        for (message in messages) {
-            if (message.role == Role.USER || message.role == Role.ASSISTANT) {
-                contents.add(
-                    Content.builder()
-                        .role(message.role.geminiName)
-                        .parts(listOf(Part.fromText(message.content)))
-                        .build()
-                )
+        for ((index, message) in messages.withIndex()) {
+            if (message.role != Role.USER && message.role != Role.ASSISTANT) continue
+
+            // Only the final user turn gets RAG-augmented — earlier turns are sent verbatim so the
+            // model still sees the real conversation history.
+
+            val isFinalUserTurn = index == messages.lastIndex && message.role == Role.USER
+            val text = if (isFinalUserTurn) {
+                runBlocking { ragService.buildPrompt(message.content, ownerId) }
+            } else {
+                message.content
             }
+
+            contents.add(
+                Content.builder()
+                    .role(message.role.geminiName)
+                    .parts(listOf(Part.fromText(text)))
+                    .build()
+            )
         }
+
         return contents
     }
 }

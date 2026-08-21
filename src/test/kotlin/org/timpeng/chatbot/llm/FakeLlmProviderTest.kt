@@ -19,6 +19,7 @@ class FakeLlmProviderTest {
 
     private val conversation = Conversation(id = 1L, uuid = "test-uuid")
     private val messages = listOf(Message(conversation = conversation, role = Role.USER, content = "Hi"))
+    private val ownerId = 1L
 
     @BeforeEach
     fun setUp() {
@@ -27,7 +28,7 @@ class FakeLlmProviderTest {
 
     @Test
     fun `generate returns a deterministic non-blank message and the fake model name`() {
-        val result = provider.generate(messages)
+        val result = provider.generate(messages, ownerId)
 
         assertTrue(result.message.isNotBlank())
         assertEquals("fake", result.model)
@@ -35,12 +36,12 @@ class FakeLlmProviderTest {
 
     @Test
     fun `generate never calls out externally - same input twice returns the same message`() {
-        assertEquals(provider.generate(messages).message, provider.generate(messages).message)
+        assertEquals(provider.generate(messages, ownerId).message, provider.generate(messages, ownerId).message)
     }
 
     @Test
     fun `generate records llm generate time tagged provider=fake`() {
-        provider.generate(messages)
+        provider.generate(messages, ownerId)
 
         val timer = meterRegistry.find("llm.generate.time").tag("provider", "fake").timer()
 
@@ -51,7 +52,7 @@ class FakeLlmProviderTest {
     fun `streamGenerate delivers more than one chunk`() {
         val chunks = mutableListOf<String>()
 
-        provider.streamGenerate(messages) { chunks.add(it) }
+        provider.streamGenerate(messages, ownerId) { chunks.add(it) }
 
         assertTrue(chunks.size > 1, "expected multiple chunks, got ${chunks.size}")
         assertTrue(chunks.joinToString("").isNotBlank())
@@ -62,7 +63,7 @@ class FakeLlmProviderTest {
         var seen = 0
 
         assertThrows<StreamCancelledException> {
-            provider.streamGenerate(messages) {
+            provider.streamGenerate(messages, ownerId) {
                 seen++
                 throw StreamCancelledException()
             }
@@ -73,7 +74,7 @@ class FakeLlmProviderTest {
 
     @Test
     fun `streamGenerate tags the outcome cancelled when the caller cancels mid-stream`() {
-        runCatching { provider.streamGenerate(messages) { throw StreamCancelledException() } }
+        runCatching { provider.streamGenerate(messages, ownerId) { throw StreamCancelledException() } }
 
         val timer = meterRegistry.find("llm.stream_generate.time").tag("outcome", "cancelled").timer()
 
@@ -82,7 +83,7 @@ class FakeLlmProviderTest {
 
     @Test
     fun `streamGenerate records first token latency`() {
-        provider.streamGenerate(messages) { }
+        provider.streamGenerate(messages, ownerId) { }
 
         val timer = meterRegistry.find("llm.stream_generate.first_token_time").tag("provider", "fake").timer()
 

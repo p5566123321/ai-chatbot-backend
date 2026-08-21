@@ -67,7 +67,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { llmProvider.generate(messagesWithUser, ownerId) } returns llmResponse
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi there!", "gemini-2.0-flash", 123L)
 
@@ -82,7 +82,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { llmProvider.generate(messagesWithUser, ownerId) } returns llmResponse
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
@@ -97,7 +97,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { llmProvider.generate(messagesWithUser, ownerId) } returns llmResponse
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse("Hi!", "gemini-2.0-flash", 50L)
 
@@ -114,7 +114,7 @@ class ChatServiceTest {
         val llmResponse = LlmResponse(message = "Hello!", model = "gemini-2.0-flash", latencyMs = 80L)
 
         every { conversationService.saveUserMessage(newConversationId, "Hi") } returns listOf(newUserMessage)
-        every { llmProvider.generate(listOf(newUserMessage)) } returns llmResponse
+        every { llmProvider.generate(listOf(newUserMessage), ownerId) } returns llmResponse
         every { conversationService.saveAssistantMessage(newConversationId, llmResponse) } returns
             ChatResponse("Hello!", "gemini-2.0-flash", 80L)
 
@@ -129,7 +129,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
+        every { llmProvider.generate(messagesWithUser, ownerId) } throws RuntimeException("LLM unavailable")
 
         assertThrows<ChatException> {
             chatService.chat(conversationId, ownerId, "Hello")
@@ -141,7 +141,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } throws RuntimeException("LLM unavailable")
+        every { llmProvider.generate(messagesWithUser, ownerId) } throws RuntimeException("LLM unavailable")
 
         runCatching { chatService.chat(conversationId, ownerId, "Hello") }
 
@@ -155,7 +155,7 @@ class ChatServiceTest {
         val messagesWithUser = history + userMessage("Hello")
 
         every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
-        every { llmProvider.generate(messagesWithUser) } returns llmResponse
+        every { llmProvider.generate(messagesWithUser, ownerId) } returns llmResponse
         every { conversationService.saveAssistantMessage(conversationId, llmResponse) } returns
             ChatResponse(markdown, "gemini-2.0-flash", 10L)
 
@@ -174,7 +174,7 @@ class ChatServiceTest {
 
         verifyOrder {
             conversationService.saveUserMessage(conversationId, "hello")
-            chatJobQueue.enqueue(ChatJobPayload(conversationId))
+            chatJobQueue.enqueue(ChatJobPayload(conversationId, ownerId))
         }
     }
 
@@ -198,7 +198,7 @@ class ChatServiceTest {
         chatService.streamChat(conversationId, ownerId, "hello", emitter)
 
         verify { generatingStatusService.markGenerating(conversationId) }
-        verify { chatJobQueue.enqueue(ChatJobPayload(conversationId)) }
+        verify { chatJobQueue.enqueue(ChatJobPayload(conversationId, ownerId)) }
     }
 
     @Test

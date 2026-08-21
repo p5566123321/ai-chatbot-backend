@@ -42,6 +42,7 @@ class ChatJobHandler(
 
     override fun handle(job: Job<ChatJobPayload>) {
         val conversationId = job.payload.conversationId
+        val ownerId = job.payload.ownerId
         val handle = emitterRegistry.get(conversationId)
         if (handle == null) {
             // The producer's controller thread/process is gone (crash/restart between enqueue
@@ -57,7 +58,7 @@ class ChatJobHandler(
         var lastFlushAt = 0L
         try {
             val messages = historyService.getHistory(conversationId)
-            llmProvider.streamGenerate(messages) { chunk ->
+            llmProvider.streamGenerate(messages, ownerId) { chunk ->
                 if (handle.cancelled.get()) throw StreamCancelledException()
                 fullResponse.append(chunk)
                 emitter.send(SseEmitter.event().name("message").data(chunk))
@@ -73,7 +74,7 @@ class ChatJobHandler(
             }
             conversationService.saveMessage(conversationId, Role.ASSISTANT, fullResponse.toString())
             emitter.complete()
-        } catch (e: StreamCancelledException) {
+        } catch (_: StreamCancelledException) {
             logger.info("Stream cancelled (client disconnected or timed out) for conversationId=$conversationId")
             persistPartialResponse(conversationId, fullResponse)
             // emitter is already terminated by the container at this point; nothing to send.
