@@ -28,7 +28,7 @@ class AuthControllerTest {
     @Test
     fun `POST register with a well-formed body returns 201`() {
         every { authService.register("user@example.com", "hunter2pass") } returns
-                UserResponse(1L, "user@example.com", LocalDateTime.now())
+                UserResponse(1L, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled = false)
 
         mockMvc.perform(
             post("/api/auth/register")

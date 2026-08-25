@@ -25,4 +25,11 @@ data class User(
 
     @Column(nullable = false)
     val createdAt: LocalDateTime = LocalDateTime.now(),
+
+    // On/off switch for MessageEmbeddingService, toggled via PATCH /api/users/me/message-embedding
+    // (see UserController) — not an app.* config value, since this is a per-user UI-controlled
+    // setting (V6__add_user_message_embedding_flag.sql). Defaults false: opt-in, since it costs a
+    // real embedding API call per message.
+    @Column(nullable = false)
+    val messageEmbeddingEnabled: Boolean = false,
 )

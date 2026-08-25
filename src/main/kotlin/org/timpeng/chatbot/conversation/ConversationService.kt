@@ -6,6 +6,7 @@ import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.timpeng.chatbot.chat.ChatResponse
 import org.timpeng.chatbot.conversation.message.Message
+import org.timpeng.chatbot.conversation.message.MessageEmbeddingService
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.exception.ConversationNotFoundException
@@ -20,6 +21,7 @@ class ConversationService (
     private val messageRepository: MessageRepository,
     private val conversationCacheService: ConversationCacheService,
     private val historyService: ConversationHistoryService,
+    private val messageEmbeddingService: MessageEmbeddingService,
 ) {
 
     fun createConversation(ownerId: Long): Conversation {
@@ -50,15 +52,20 @@ class ConversationService (
 
     // Redis 不參與 JPA 交易，若在 commit 前寫入快取，一旦外層交易 rollback，
     // 快取仍會留著一則 DB 沒有的訊息。因此延後到交易確定 commit 後才寫入快取。
+    // messageEmbeddingService.embedAsync is a no-op unless the message's conversation owner has
+    // switched it on (see its kdoc) — fired here (same afterCommit point as the cache write) but
+    // not awaited, since it does its own work on a background scope.
     private fun cacheAfterCommit(conversationId: String, message: Message) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
                 override fun afterCommit() {
                     conversationCacheService.saveChatMessage(conversationId, message)
+                    messageEmbeddingService.embedAsync(message)
                 }
             })
         } else {
             conversationCacheService.saveChatMessage(conversationId, message)
+            messageEmbeddingService.embedAsync(message)
         }
     }
 

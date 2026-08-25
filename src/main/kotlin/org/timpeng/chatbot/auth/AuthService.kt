@@ -47,7 +47,7 @@ class AuthService(
         } catch (e: DataIntegrityViolationException) {
             throw UserAlreadyExistsException("Email already registered: $normalizedEmail")
         }
-        return UserResponse(user.id!!, user.email, user.createdAt)
+        return UserResponse.from(user)
     }
 
     fun login(email: String, password: String): AuthResponse {

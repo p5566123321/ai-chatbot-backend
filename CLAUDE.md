@@ -115,6 +115,31 @@ method bolted onto one of these.
 This avoids caching a message whose DB write gets rolled back. Follow this pattern for any new
 write path that touches both Postgres and Redis.
 
+### Chat message embedding
+
+`MessageEmbeddingService.embedAsync`, called from the same `afterCommit` hook as the Redis cache
+write above, embeds every USER/ASSISTANT message into `messages.embedding` (`vector(768)`,
+`V5__add_message_embedding_column.sql`) through the existing chat endpoints — no new endpoint,
+this rides `saveMessage`. Reuses the same `EmbeddingProvider` (Gemini, `app.llm.gemini.embedding-*`)
+already used for `document_chunk`; writes go through raw JDBC (`MessageEmbeddingJdbcRepository`),
+same `CAST(? AS vector)` split as `DocumentChunkJdbcRepository`. Unlike `DocumentChunkJpaEntity`,
+`Message` deliberately does **not** map `embedding` as a JPA field at all — `messageRepository.save`
+runs on every chat turn, and Hibernate has no built-in JDBC type for pgvector's `vector` column;
+binding even a null `PGvector` through JPA on that path fails the INSERT outright. Leaving the
+column unmapped is safe (`ddl-auto=validate` doesn't require every DB column to be entity-mapped).
+
+Unlike the cache write, this is **not** inline: it's gated by a per-user switch
+(`users.message_embedding_enabled`, `V6__add_user_message_embedding_flag.sql`, default false) set
+via `PATCH /api/users/me/message-embedding` (`UserController`/`UserService`) — a UI-controlled
+setting, not an `app.*` config value, so `embedAsync` reads it per message off the message's
+conversation owner (`Conversation.ownerId`; a pre-auth conversation with no owner is skipped
+entirely). Once the switch check passes, the actual embed+persist runs on its own
+`CoroutineScope(Dispatchers.IO + SupervisorJob())` and is never awaited — a Gemini embed call is a
+real external round-trip, and `saveMessage` sits on the hot chat path (`ChatService.chat`'s
+response, `ChatJobHandler`'s SSE stream), so nothing there can block on it. Failures are logged and
+swallowed inside the launched coroutine; there's no caller left to hand them to by the time the
+embed finishes. No retrieval is wired up yet — `RagService` still only searches `document_chunk`.
+
 ### Streaming chat
 
 `ChatService.streamChat` validates the conversation and saves the user message synchronously (so

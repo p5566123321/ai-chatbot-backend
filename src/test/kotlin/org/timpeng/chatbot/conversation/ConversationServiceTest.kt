@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.timpeng.chatbot.chat.ChatResponse
 import org.timpeng.chatbot.conversation.message.Message
+import org.timpeng.chatbot.conversation.message.MessageEmbeddingService
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.exception.ConversationNotFoundException
@@ -22,6 +23,7 @@ class ConversationServiceTest {
     private val conversationRepository: ConversationRepository = mockk()
     private val messageRepository: MessageRepository = mockk()
     private val conversationCacheService: ConversationCacheService = mockk()
+    private val messageEmbeddingService: MessageEmbeddingService = mockk(relaxed = true)
 
     private lateinit var conversationService: ConversationService
 
@@ -31,7 +33,13 @@ class ConversationServiceTest {
 
     @BeforeEach
     fun setUp() {
-        conversationService = ConversationService(conversationRepository, messageRepository, conversationCacheService, conversationHistoryService)
+        conversationService = ConversationService(
+            conversationRepository,
+            messageRepository,
+            conversationCacheService,
+            conversationHistoryService,
+            messageEmbeddingService,
+        )
     }
 
     // createConversation
@@ -112,6 +120,19 @@ class ConversationServiceTest {
         conversationService.saveMessage(conversationId, Role.USER, "Hello")
 
         verify { conversationCacheService.saveChatMessage(conversationId, match { it.content == "Hello" }) }
+    }
+
+    @Test
+    fun `saveMessage triggers embedAsync outside an active transaction`() {
+        // no Spring transaction is bound in this unit test, so the embed trigger happens inline —
+        // same afterCommit trigger point as the redis cache write above.
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(conversation)
+        every { messageRepository.save(any()) } answers { firstArg() }
+        every { conversationCacheService.saveChatMessage(conversationId, any()) } returns Unit
+
+        conversationService.saveMessage(conversationId, Role.USER, "Hello")
+
+        verify { messageEmbeddingService.embedAsync(match { it.content == "Hello" }) }
     }
 
     @Test
