@@ -21,10 +21,13 @@
 ## Phase 6
 - User-configurable model parameters: model choice, bring-your-own API key (BYOK), history
   window size
-- Deliberately sequenced after Phase 4 (RAG), not before: model choice will need to cover both
-  the chat model and the embedding model once RAG lands, and BYOK key storage (at-rest
-  encryption, key management, keeping keys out of logs/metrics) is its own security surface
-  worth an ADR rather than a bolt-on
-- History window size (moving `app.conversation.cache.max-msg` from a global config to a
-  per-user/per-conversation value) has no such dependency and can be pulled forward opportunistically
-  if useful before the rest of this phase
+- Generation-parameter overrides (temperature/topP/topK/candidateCount/maxOutputTokens/
+  systemInstruction) shipped first, via `V7__add_user_gemini_settings.sql` and
+  `PATCH /api/users/me/gemini-settings` — see `CLAUDE.md`'s "LLM provider abstraction" section.
+- **Done**: chat model choice (fixed whitelist, `GeminiSettings.model`) and BYOK (per-user Gemini
+  API key, AES-256-GCM at rest) — see ADR-010. Deliberately scoped to the chat path only; the
+  embedding model/embedding BYOK is called out there as follow-up work, blocked on the shared
+  `vector(768)` column and `EmbeddingProvider.embed` not carrying an `ownerId`.
+- **Remaining**: history window size (moving `app.conversation.cache.max-msg` from a global
+  config to a per-user/per-conversation value) — no dependency on the other two, can be pulled
+  forward opportunistically whenever useful.

@@ -16,6 +16,10 @@ import jakarta.validation.constraints.Size
  * before it reaches Gemini.
  */
 data class UpdateGeminiSettingsRequest(
+    // Must be one of AllowedGeminiModels.IDS — checked in UserService.updateGeminiSettings rather
+    // than declaratively here, since it needs a clean 400 message listing the allowed set.
+    val model: String? = null,
+
     @field:Size(max = 10_000, message = "systemInstruction must be at most 10000 characters")
     val systemInstruction: String? = null,
 
@@ -38,6 +42,7 @@ data class UpdateGeminiSettingsRequest(
     val maxOutputTokens: Int? = null,
 ) {
     fun toSettings(): GeminiSettings = GeminiSettings(
+        model = model,
         systemInstruction = systemInstruction,
         temperature = temperature,
         topP = topP,

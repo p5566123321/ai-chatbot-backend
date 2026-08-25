@@ -3,6 +3,7 @@ package org.timpeng.chatbot.auth.user
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
 import io.mockk.verify
+import org.hamcrest.Matchers.hasItem
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -33,7 +34,10 @@ class UserControllerTest {
     private fun userResponse(
         messageEmbeddingEnabled: Boolean = false,
         geminiSettings: GeminiSettings = GeminiSettings(),
-    ) = UserResponse(ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings)
+        hasGeminiApiKey: Boolean = false,
+    ) = UserResponse(
+        ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings, hasGeminiApiKey
+    )
 
     @BeforeEach
     fun setUpAuth() {
@@ -142,5 +146,60 @@ class UserControllerTest {
         verify {
             userService.updateGeminiSettings(ownerId, match { it.toSettings() == GeminiSettings() })
         }
+    }
+
+    @Test
+    fun `GET gemini-models returns the whitelist`() {
+        mockMvc.perform(get("/api/users/me/gemini-models"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$", hasItem("gemini-2.5-pro")))
+    }
+
+    @Test
+    fun `PATCH gemini-api-key stores a key and reports hasGeminiApiKey`() {
+        every { userService.updateGeminiApiKey(ownerId, any()) } returns
+            userResponse(hasGeminiApiKey = true)
+
+        mockMvc.perform(
+            patch("/api/users/me/gemini-api-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"apiKey":"sk-real-key"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hasGeminiApiKey").value(true))
+
+        verify {
+            userService.updateGeminiApiKey(ownerId, match { it.apiKey == "sk-real-key" })
+        }
+    }
+
+    @Test
+    fun `PATCH gemini-api-key with null apiKey clears the stored key`() {
+        every { userService.updateGeminiApiKey(ownerId, any()) } returns
+            userResponse(hasGeminiApiKey = false)
+
+        mockMvc.perform(
+            patch("/api/users/me/gemini-api-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"apiKey":null}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hasGeminiApiKey").value(false))
+
+        verify {
+            userService.updateGeminiApiKey(ownerId, match { it.apiKey == null })
+        }
+    }
+
+    @Test
+    fun `PATCH gemini-api-key rejects an overly long key`() {
+        mockMvc.perform(
+            patch("/api/users/me/gemini-api-key")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"apiKey":"${"a".repeat(201)}"}""")
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { userService.updateGeminiApiKey(any(), any()) }
     }
 }

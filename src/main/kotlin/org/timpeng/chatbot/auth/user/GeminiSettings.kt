@@ -13,6 +13,11 @@ import jakarta.persistence.Embeddable
  */
 @Embeddable
 data class GeminiSettings(
+    // Chat model override — must be one of AllowedGeminiModels.IDS (enforced in
+    // UserService.updateGeminiSettings, not here, same "loose at the entity layer" pattern as the
+    // rest of this class). null falls back to app.llm.gemini.model (GeminiProvider.defaultModel).
+    @Column(name = "gemini_model")
+    val model: String? = null,
     @Column(columnDefinition = "TEXT")
     val systemInstruction: String? = null,
     val temperature: Float? = null,
@@ -28,7 +33,12 @@ data class GeminiSettings(
     val candidateCount: Int? = null,
     val maxOutputTokens: Int? = null,
 ) {
-    fun isEmpty(): Boolean =
+    fun isEmpty(): Boolean = model == null && isGenerationConfigEmpty()
+
+    // Excludes `model` — it's not a GenerateContentConfig field (see GeminiProvider.generate's
+    // separate `effectiveModel` resolution), so a caller who only overrode `model` still gets a
+    // `null` GenerateContentConfig rather than an empty-but-non-null builder.
+    fun isGenerationConfigEmpty(): Boolean =
         systemInstruction == null && temperature == null && topP == null &&
             topK == null && candidateCount == null && maxOutputTokens == null
 }

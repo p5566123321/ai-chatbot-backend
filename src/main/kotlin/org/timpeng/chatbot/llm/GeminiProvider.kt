@@ -1,6 +1,5 @@
 package org.timpeng.chatbot.llm
 
-import com.google.genai.Models
 import com.google.genai.ResponseStream
 import com.google.genai.types.Content
 import com.google.genai.types.GenerateContentConfig
@@ -13,6 +12,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
+import org.timpeng.chatbot.auth.user.User
 import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
@@ -29,7 +29,7 @@ import kotlin.time.measureTimedValue
 @Service
 @ConditionalOnProperty(name = ["app.llm.provider"], havingValue = "gemini")
 class GeminiProvider(
-    private val models: Models,
+    private val geminiClientFactory: GeminiClientFactory,
     private val meterRegistry: MeterRegistry,
     private val ragService: RagService,
     private val userRepository: UserRepository,
@@ -37,8 +37,10 @@ class GeminiProvider(
 
     private val logger = LoggerFactory.getLogger(GeminiProvider::class.java)
 
+    // Fallback when the caller has no per-user GeminiSettings.model override — see
+    // buildGenerationConfig/effectiveModel below.
     @Value("\${app.llm.gemini.model}")
-    private val model = "gemini-3-flash-preview"
+    private val defaultModel = "gemini-3-flash-preview"
 
     @Value("\${app.llm.gemini.timeout-ms}")
     private val timeoutMs = 30000L
@@ -59,8 +61,11 @@ class GeminiProvider(
         messages: List<Message>,
         ownerId: Long,
     ): LlmResponse {
+        val user = userRepository.findById(ownerId).orElse(null)
         val contents = buildContents(messages, ownerId)
-        val config = buildGenerationConfig(ownerId)
+        val config = buildGenerationConfig(user)
+        val effectiveModel = user?.geminiSettings?.model ?: defaultModel
+        val models = geminiClientFactory.modelsFor(user)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -68,7 +73,7 @@ class GeminiProvider(
             val (response, duration) = measureTimedValue {
                 callWithTimeout {
                     models.generateContent(
-                        model,
+                        effectiveModel,
                         contents,
                         config
                     )
@@ -82,7 +87,7 @@ class GeminiProvider(
 
             logger.info(
                 "[Gemini API] model={}, latency={}, promptTokens={}, candidatesTokens={}, totalTokens={}",
-                model,
+                effectiveModel,
                 duration.inWholeMilliseconds,
                 promptTokens,
                 candidatesTokens,
@@ -91,7 +96,7 @@ class GeminiProvider(
 
             return LlmResponse(
                 response.text().toString(),
-                model,
+                effectiveModel,
                 duration.inWholeMilliseconds
             )
         } catch (e: TimeoutException) {
@@ -107,7 +112,7 @@ class GeminiProvider(
                 Timer.builder("llm.generate.time")
                     .description("LLM API 呼叫耗時")
                     .tag("provider", "gemini")
-                    .tag("model", model)
+                    .tag("model", effectiveModel)
                     .tag("outcome", outcome)
                     .publishPercentiles(0.5, 0.95, 0.99)
                     .register(meterRegistry)
@@ -116,8 +121,11 @@ class GeminiProvider(
     }
 
     override fun streamGenerate(messagesWithUser: List<Message>, ownerId: Long, onChunk: (String) -> Unit) {
+        val user = userRepository.findById(ownerId).orElse(null)
         val contents = buildContents(messagesWithUser, ownerId)
-        val config = buildGenerationConfig(ownerId)
+        val config = buildGenerationConfig(user)
+        val effectiveModel = user?.geminiSettings?.model ?: defaultModel
+        val models = geminiClientFactory.modelsFor(user)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -128,7 +136,7 @@ class GeminiProvider(
         try {
             callWithTimeout {
                 val stream = models.generateContentStream(
-                    model,
+                    effectiveModel,
                     contents,
                     config
                 )
@@ -145,7 +153,7 @@ class GeminiProvider(
             val totalLatencyMs = (System.nanoTime() - start) / 1_000_000
             logger.info(
                 "[Gemini API] model={}, firstTokenLatency={}ms, totalLatency={}ms",
-                model,
+                effectiveModel,
                 firstTokenLatencyMs,
                 totalLatencyMs,
             )
@@ -166,7 +174,7 @@ class GeminiProvider(
                 Timer.builder("llm.stream_generate.time")
                     .description("LLM 串流總耗時")
                     .tag("provider", "gemini")
-                    .tag("model", model)
+                    .tag("model", effectiveModel)
                     .tag("outcome", outcome)
                     .publishPercentiles(0.5, 0.95, 0.99)
                     .register(meterRegistry)
@@ -175,7 +183,7 @@ class GeminiProvider(
                 Timer.builder("llm.stream_generate.first_token_time")
                     .description("LLM 串流首個 token 延遲")
                     .tag("provider", "gemini")
-                    .tag("model", model)
+                    .tag("model", effectiveModel)
                     .publishPercentiles(0.5, 0.95, 0.99)
                     .register(meterRegistry)
                     .record(it, java.util.concurrent.TimeUnit.MILLISECONDS)
@@ -185,20 +193,21 @@ class GeminiProvider(
 
     /**
      * Per-user `GenerateContentConfig` overrides (`GeminiSettings`, `V7__add_user_gemini_settings.sql`),
-     * toggled via `PATCH /api/users/me/gemini-settings` — read here, not passed down from the chat
-     * endpoints, same as [RagService] being read inside [buildContents] rather than threaded down
-     * from the chat endpoints. `null` (not an empty builder) when the caller has no overrides set
-     * at all, matching this class's pre-existing behavior of passing `null` for config — Gemini's
-     * own defaults apply exactly as before this feature existed.
+     * toggled via `PATCH /api/users/me/gemini-settings`. Takes the already-fetched [User] rather
+     * than re-querying by ownerId — [generate]/[streamGenerate] fetch it once and reuse it for this,
+     * the effective model, and [GeminiClientFactory]. `null` (not an empty builder) when the caller
+     * has no overrides set at all, matching this class's pre-existing behavior of passing `null` for
+     * config — Gemini's own defaults apply exactly as before this feature existed. Note `model`
+     * lives on `GeminiSettings` too but is applied separately (it's not a `GenerateContentConfig`
+     * field) — see the `effectiveModel` computation in [generate]/[streamGenerate].
      *
      * `candidateCount` is threaded through as requested, but note [generate] only ever reads
      * `response.text()` (the first candidate) — this doesn't yet surface additional candidates
      * anywhere in `LlmResponse`/the SSE stream.
      */
-    private fun buildGenerationConfig(ownerId: Long): GenerateContentConfig? {
-        val settings = userRepository.findById(ownerId).map { it.geminiSettings }.orElse(null)
-            ?: return null
-        if (settings.isEmpty()) return null
+    private fun buildGenerationConfig(user: User?): GenerateContentConfig? {
+        val settings = user?.geminiSettings ?: return null
+        if (settings.isGenerationConfigEmpty()) return null
 
         val builder = GenerateContentConfig.builder()
         settings.systemInstruction?.let { builder.systemInstruction(Content.fromParts(Part.fromText(it))) }

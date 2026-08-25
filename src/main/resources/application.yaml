@@ -90,3 +90,8 @@ app:
     secret: ${JWT_SECRET}
     issuer: ai-chatbot-backend
     expiration-ms: ${JWT_EXPIRATION_MS:3600000}
+  byok:
+    # AES-256 key encrypting user-supplied Gemini API keys at rest (ApiKeyCipher,
+    # docs/decision/010) — generate with `openssl rand -base64 32`. No default, same as jwt.secret
+    # above: a missing/wrong-length key fails application startup by design.
+    encryption-key: ${BYOK_ENCRYPTION_KEY}

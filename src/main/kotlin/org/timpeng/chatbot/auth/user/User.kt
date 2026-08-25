@@ -41,4 +41,11 @@ data class User(
     // falls back to the Gemini API's own default, same as before this feature existed.
     @Embedded
     val geminiSettings: GeminiSettings = GeminiSettings(),
+
+    // BYOK: Base64(iv || AES-256-GCM ciphertext+tag) via ApiKeyCipher, never plaintext. Set/cleared
+    // via PATCH /api/users/me/gemini-api-key (UserController/UserService). Deliberately not part
+    // of GeminiSettings — see V8's migration comment for why. Read by GeminiClientFactory to build
+    // a per-user google-genai Client when present, falling back to the app-wide default otherwise.
+    @Column(name = "gemini_api_key_ciphertext", columnDefinition = "TEXT")
+    val geminiApiKeyCiphertext: String? = null,
 )

@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import org.timpeng.chatbot.auth.CurrentUserId
+import org.timpeng.chatbot.llm.AllowedGeminiModels
 
 // Under /api/users, not /api/auth (AuthController) — this is account-level self-service, not
 // registration/login. Requires auth like everything else under /api/** (SecurityConfig).
@@ -36,4 +37,18 @@ class UserController(private val userService: UserService) {
         @Valid @RequestBody request: UpdateGeminiSettingsRequest,
     ): UserResponse =
         userService.updateGeminiSettings(userId, request)
+
+    // Whitelist backing GeminiSettings.model — single source of truth shared with the validation
+    // in UserService.updateGeminiSettings, so the frontend renders a dropdown instead of free text.
+    @GetMapping("/gemini-models")
+    fun getGeminiModels(): List<String> = AllowedGeminiModels.IDS.toList()
+
+    // BYOK — full replace like gemini-settings above, but never echoes the key back (see
+    // UserResponse.hasGeminiApiKey).
+    @PatchMapping("/gemini-api-key")
+    fun updateGeminiApiKey(
+        @CurrentUserId userId: Long,
+        @Valid @RequestBody request: UpdateGeminiApiKeyRequest,
+    ): UserResponse =
+        userService.updateGeminiApiKey(userId, request)
 }

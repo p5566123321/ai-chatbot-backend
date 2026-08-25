@@ -185,14 +185,31 @@ strings.
 
 `GeminiProvider.buildGenerationConfig` reads per-user `GenerateContentConfig` overrides
 (`User.geminiSettings`/`GeminiSettings` — systemInstruction/temperature/topP/topK/candidateCount/
-maxOutputTokens, `V7__add_user_gemini_settings.sql`) via `ownerId`, same pattern as `RagService`
-being read inside `buildContents` rather than threaded down from the chat endpoints. Every field
-is independently nullable; `null` means "don't set this on the request" (Gemini's own default
-applies), and an all-null `GeminiSettings` makes `buildGenerationConfig` return `null` outright —
-identical to this class's behavior before the feature existed. Set via
-`PATCH /api/users/me/gemini-settings` (`UserController`) as a full replace, not a partial merge.
-`candidateCount` is passed through but not consumed anywhere yet — `generate` only ever reads
-`response.text()` (the first candidate).
+maxOutputTokens, `V7__add_user_gemini_settings.sql`) via the `User` row `generate`/`streamGenerate`
+already fetch, same pattern as `RagService` being read inside `buildContents` rather than threaded
+down from the chat endpoints. Every field is independently nullable; `null` means "don't set this
+on the request" (Gemini's own default applies), and a settings object with no
+generation-config fields set (`GeminiSettings.isGenerationConfigEmpty()`) makes
+`buildGenerationConfig` return `null` outright — identical to this class's behavior before the
+feature existed. Set via `PATCH /api/users/me/gemini-settings` (`UserController`) as a full
+replace, not a partial merge. `candidateCount` is passed through but not consumed anywhere yet —
+`generate` only ever reads `response.text()` (the first candidate).
+
+**Model choice + BYOK (ADR-010)**: `GeminiSettings.model` overrides the chat model per user
+(`GeminiProvider`'s `effectiveModel = user?.geminiSettings?.model ?: defaultModel`), validated
+against a fixed whitelist (`AllowedGeminiModels.IDS`) in `UserService.updateGeminiSettings` and
+exposed for the frontend dropdown via `GET /api/users/me/gemini-models`. `User.geminiApiKeyCiphertext`
+holds a user-supplied Gemini API key (BYOK), AES-256-GCM-encrypted at rest
+(`org.timpeng.chatbot.crypto.ApiKeyCipher`, key from `app.byok.encryption-key`/`BYOK_ENCRYPTION_KEY`
+— same fail-fast-at-startup treatment as `JWT_SECRET`), set via
+`PATCH /api/users/me/gemini-api-key` (null/blank clears it, no validation call to Gemini on save).
+`GeminiClientFactory.modelsFor(user)` decrypts it transiently to build a per-call
+`com.google.genai.Client` when present, otherwise returns the app-wide default `Models` bean
+(`GenAIConfig`) — never cached, never logged. `UserResponse` only ever exposes
+`hasGeminiApiKey: Boolean`, never the ciphertext (deliberately not part of `GeminiSettings`, which
+`UserResponse` echoes back wholesale). Both are chat-only — `GeminiEmbeddingProvider` is untouched;
+see ADR-010's Context for why (fixed `vector(768)` columns, `EmbeddingProvider.embed` not carrying
+an `ownerId`).
 
 ### Metrics
 

@@ -32,6 +32,7 @@ class GeminiProviderTest {
     private val meterRegistry: MeterRegistry = SimpleMeterRegistry()
     private val ragService: RagService = mockk(relaxed = true)
     private val userRepository: UserRepository = mockk()
+    private val geminiClientFactory: GeminiClientFactory = mockk()
 
     private val conversation = Conversation(id = 1L, uuid = "test-uuid")
     private val ownerId = 1L
@@ -49,7 +50,10 @@ class GeminiProviderTest {
     @BeforeEach
     fun setUp() {
         every { userRepository.findById(ownerId) } returns Optional.of(userWithSettings())
-        geminiProvider = GeminiProvider(models, meterRegistry, ragService, userRepository)
+        // Every existing test below exercises the "no BYOK key" path — modelsFor always hands back
+        // the same mocked `models`, regardless of which User it's called with.
+        every { geminiClientFactory.modelsFor(any()) } returns models
+        geminiProvider = GeminiProvider(geminiClientFactory, meterRegistry, ragService, userRepository)
     }
 
     private fun stubGenerate(replyText: String): GenerateContentResponse {
@@ -297,6 +301,80 @@ class GeminiProviderTest {
                 }
             )
         }
+    }
+
+    @Test
+    fun `generate passes null config when the caller only overrode model`() {
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            userWithSettings(GeminiSettings(model = "gemini-2.5-pro"))
+        )
+        stubGenerate("Response")
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify { models.generateContent("gemini-2.5-pro", any<List<Content>>(), null) }
+    }
+
+    // Model choice + BYOK (ADR-010)
+
+    @Test
+    fun `generate uses the caller's model override instead of the configured default`() {
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            userWithSettings(GeminiSettings(model = "gemini-2.5-flash"))
+        )
+        stubGenerate("Response")
+
+        val result = geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        assertEquals("gemini-2.5-flash", result.model)
+        verify { models.generateContent("gemini-2.5-flash", any<List<Content>>(), null) }
+    }
+
+    @Test
+    fun `generate falls back to the configured default model when there is no override`() {
+        stubGenerate("Response")
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify { models.generateContent("gemini-3-flash-preview", any<List<Content>>(), null) }
+    }
+
+    @Test
+    fun `generate resolves Models through GeminiClientFactory using the fetched user`() {
+        val user = userWithSettings()
+        every { userRepository.findById(ownerId) } returns Optional.of(user)
+        stubGenerate("Response")
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify { geminiClientFactory.modelsFor(user) }
+    }
+
+    @Test
+    fun `generate uses the BYOK client returned by GeminiClientFactory when the user has an api key`() {
+        val user = userWithSettings().copy(geminiApiKeyCiphertext = "ciphertext")
+        val byokModels: Models = mockk()
+        every { userRepository.findById(ownerId) } returns Optional.of(user)
+        every { geminiClientFactory.modelsFor(user) } returns byokModels
+        val response: GenerateContentResponse = mockk(relaxed = true)
+        every { response.text() } returns "Response"
+        every { response.usageMetadata() } returns Optional.empty()
+        every { byokModels.generateContent(any<String>(), any<List<Content>>(), null) } returns response
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify { byokModels.generateContent(any<String>(), any<List<Content>>(), null) }
+        verify(exactly = 0) { models.generateContent(any<String>(), any<List<Content>>(), any()) }
     }
 
     private fun Content.textOf(): String = parts().get()[0].text().get()
