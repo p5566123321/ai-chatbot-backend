@@ -35,8 +35,10 @@ class UserControllerTest {
         messageEmbeddingEnabled: Boolean = false,
         geminiSettings: GeminiSettings = GeminiSettings(),
         hasGeminiApiKey: Boolean = false,
+        ragEnabled: Boolean = true,
     ) = UserResponse(
-        ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings, hasGeminiApiKey
+        ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings,
+        hasGeminiApiKey, ragEnabled,
     )
 
     @BeforeEach
@@ -201,5 +203,33 @@ class UserControllerTest {
             .andExpect(status().isBadRequest)
 
         verify(exactly = 0) { userService.updateGeminiApiKey(any(), any()) }
+    }
+
+    @Test
+    fun `PATCH rag-enabled turns the switch off`() {
+        every { userService.setRagEnabled(ownerId, false) } returns userResponse(ragEnabled = false)
+
+        mockMvc.perform(
+            patch("/api/users/me/rag-enabled")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"enabled":false}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.ragEnabled").value(false))
+
+        verify { userService.setRagEnabled(ownerId, false) }
+    }
+
+    @Test
+    fun `PATCH rag-enabled turns the switch on`() {
+        every { userService.setRagEnabled(ownerId, true) } returns userResponse(ragEnabled = true)
+
+        mockMvc.perform(
+            patch("/api/users/me/rag-enabled")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"enabled":true}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.ragEnabled").value(true))
     }
 }

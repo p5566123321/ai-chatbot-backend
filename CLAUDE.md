@@ -140,6 +140,13 @@ response, `ChatJobHandler`'s SSE stream), so nothing there can block on it. Fail
 swallowed inside the launched coroutine; there's no caller left to hand them to by the time the
 embed finishes. No retrieval is wired up yet — `RagService` still only searches `document_chunk`.
 
+`RagService.buildPrompt` itself is opt-out per user (`users.rag_enabled`,
+`V9__add_user_rag_enabled_flag.sql`, default **true** — unlike `message_embedding_enabled` above,
+this only lets someone turn off retrieval that already runs automatically for anyone with at least
+one document, so it defaults to preserving existing behavior rather than opt-in) via
+`PATCH /api/users/me/rag-enabled`. Checked first, before `DocumentService.checkDocument`, so a
+caller who disabled it never pays for the embed/vector-search calls either.
+
 ### Streaming chat
 
 `ChatService.streamChat` validates the conversation and saves the user message synchronously (so

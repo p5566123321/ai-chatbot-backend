@@ -66,4 +66,12 @@ class UserService(
         val updated = userRepository.save(user.copy(geminiApiKeyCiphertext = ciphertext))
         return UserResponse.from(updated)
     }
+
+    // Opt out of RAG augmentation on chat queries — read per-request by RagService.buildPrompt via
+    // ownerId, same "UI-controlled setting, not app.* config" pattern as messageEmbeddingEnabled.
+    fun setRagEnabled(userId: Long, enabled: Boolean): UserResponse {
+        val user = requireUser(userId)
+        val updated = userRepository.save(user.copy(ragEnabled = enabled))
+        return UserResponse.from(updated)
+    }
 }

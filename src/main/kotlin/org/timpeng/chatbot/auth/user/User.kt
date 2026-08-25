@@ -48,4 +48,12 @@ data class User(
     // a per-user google-genai Client when present, falling back to the app-wide default otherwise.
     @Column(name = "gemini_api_key_ciphertext", columnDefinition = "TEXT")
     val geminiApiKeyCiphertext: String? = null,
+
+    // On/off switch for RAG augmentation on chat queries (RagService.buildPrompt), toggled via
+    // PATCH /api/users/me/rag-enabled (see UserController). Defaults true — RAG already runs
+    // automatically for anyone with at least one document (DocumentService.checkDocument), so this
+    // only lets a caller opt OUT of existing behavior, unlike messageEmbeddingEnabled's opt-in
+    // false default (V9__add_user_rag_enabled_flag.sql).
+    @Column(nullable = false)
+    val ragEnabled: Boolean = true,
 )

@@ -3,6 +3,7 @@ package org.timpeng.chatbot.rag
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.rag.document.Document
 import org.timpeng.chatbot.rag.document.DocumentService
 import org.timpeng.chatbot.rag.embedding.EmbeddingProvider
@@ -13,6 +14,7 @@ class RagService(
     private val embeddingProvider: EmbeddingProvider,
     private val vectorSearchPort: VectorSearchPort,
     private val documentService: DocumentService,
+    private val userRepository: UserRepository,
     // How many candidate chunks pgvector returns, and the minimum similarity score (see
     // RetrievedChunk.score — higher is more similar, cosine similarity range is [-1, 1]) a chunk
     // must clear to make it into the prompt. Both are retrieval-quality knobs meant to be tuned
@@ -30,6 +32,17 @@ class RagService(
     }
 
     suspend fun buildPrompt(userQuery: String, ownerId: Long): String {
+        // Per-user opt-out (users.rag_enabled, V9__add_user_rag_enabled_flag.sql), toggled via
+        // PATCH /api/users/me/rag-enabled — checked first so a caller who turned RAG off never
+        // pays for the checkDocument/embed/vector-search calls below. Defaults true (same as the
+        // column default) for a caller with no row at all, matching this method's pre-existing
+        // behavior of falling back to the raw query whenever there's nothing useful to augment with.
+        val ragEnabled = userRepository.findById(ownerId).map { it.ragEnabled }.orElse(true)
+        if (!ragEnabled) {
+            logger.info("[RAG] disabled by owner=$ownerId")
+            return userQuery
+        }
+
         if(!documentService.checkDocument(ownerId)){
             logger.info("[RAG] Document not found for $ownerId")
             return userQuery

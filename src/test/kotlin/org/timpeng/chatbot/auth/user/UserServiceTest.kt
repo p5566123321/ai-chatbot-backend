@@ -169,4 +169,23 @@ class UserServiceTest {
             userService.updateGeminiApiKey(1L, UpdateGeminiApiKeyRequest(apiKey = "sk-real-key"))
         }
     }
+
+    @Test
+    fun `setRagEnabled flips the switch and persists it`() {
+        val slot = slot<User>()
+        every { userRepository.findById(1L) } returns Optional.of(user)
+        every { userRepository.save(capture(slot)) } answers { slot.captured }
+
+        val result = userService.setRagEnabled(1L, false)
+
+        assertFalse(slot.captured.ragEnabled)
+        assertFalse(result.ragEnabled)
+    }
+
+    @Test
+    fun `setRagEnabled throws when the authenticated userId has no row`() {
+        every { userRepository.findById(1L) } returns Optional.empty()
+
+        assertThrows<IllegalStateException> { userService.setRagEnabled(1L, false) }
+    }
 }

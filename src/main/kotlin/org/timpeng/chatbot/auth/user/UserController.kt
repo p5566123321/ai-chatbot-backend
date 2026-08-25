@@ -51,4 +51,13 @@ class UserController(private val userService: UserService) {
         @Valid @RequestBody request: UpdateGeminiApiKeyRequest,
     ): UserResponse =
         userService.updateGeminiApiKey(userId, request)
+
+    // Lets the caller opt out of RAG augmentation on their own chat queries — see
+    // RagService.buildPrompt.
+    @PatchMapping("/rag-enabled")
+    fun updateRagEnabled(
+        @CurrentUserId userId: Long,
+        @RequestBody request: UpdateRagEnabledRequest,
+    ): UserResponse =
+        userService.setRagEnabled(userId, request.enabled)
 }
