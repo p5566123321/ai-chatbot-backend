@@ -3,9 +3,9 @@ package org.timpeng.chatbot.auth.user
 import org.springframework.stereotype.Service
 
 /**
- * Backs `GET /api/users/me` and `PATCH /api/users/me/message-embedding` (see [UserController]) —
- * account-level reads/writes, separate from [org.timpeng.chatbot.auth.AuthService] which only
- * covers register/login.
+ * Backs `GET /api/users/me`, `PATCH /api/users/me/message-embedding`, and
+ * `PATCH /api/users/me/gemini-settings` (see [UserController]) — account-level reads/writes,
+ * separate from [org.timpeng.chatbot.auth.AuthService] which only covers register/login.
  */
 @Service
 class UserService(
@@ -25,6 +25,13 @@ class UserService(
     fun setMessageEmbeddingEnabled(userId: Long, enabled: Boolean): UserResponse {
         val user = requireUser(userId)
         val updated = userRepository.save(user.copy(messageEmbeddingEnabled = enabled))
+        return UserResponse.from(updated)
+    }
+
+    // Full replace, not a merge — see UpdateGeminiSettingsRequest's kdoc.
+    fun updateGeminiSettings(userId: Long, request: UpdateGeminiSettingsRequest): UserResponse {
+        val user = requireUser(userId)
+        val updated = userRepository.save(user.copy(geminiSettings = request.toSettings()))
         return UserResponse.from(updated)
     }
 }

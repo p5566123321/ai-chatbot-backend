@@ -1,5 +1,6 @@
 package org.timpeng.chatbot.auth.user
 
+import jakarta.validation.Valid
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -26,4 +27,13 @@ class UserController(private val userService: UserService) {
         @RequestBody request: UpdateMessageEmbeddingRequest,
     ): UserResponse =
         userService.setMessageEmbeddingEnabled(userId, request.enabled)
+
+    // Full replace of GeminiSettings, read by GeminiProvider per request via the message's
+    // ownerId — see UpdateGeminiSettingsRequest's kdoc for why this isn't a partial merge.
+    @PatchMapping("/gemini-settings")
+    fun updateGeminiSettings(
+        @CurrentUserId userId: Long,
+        @Valid @RequestBody request: UpdateGeminiSettingsRequest,
+    ): UserResponse =
+        userService.updateGeminiSettings(userId, request)
 }

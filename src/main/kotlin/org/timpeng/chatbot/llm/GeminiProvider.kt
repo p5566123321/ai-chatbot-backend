@@ -3,6 +3,7 @@ package org.timpeng.chatbot.llm
 import com.google.genai.Models
 import com.google.genai.ResponseStream
 import com.google.genai.types.Content
+import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.GenerateContentResponse
 import com.google.genai.types.Part
 import io.micrometer.core.instrument.MeterRegistry
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import org.timpeng.chatbot.exception.LlmException
@@ -29,7 +31,8 @@ import kotlin.time.measureTimedValue
 class GeminiProvider(
     private val models: Models,
     private val meterRegistry: MeterRegistry,
-    private val ragService: RagService
+    private val ragService: RagService,
+    private val userRepository: UserRepository,
 ) : LlmProvider {
 
     private val logger = LoggerFactory.getLogger(GeminiProvider::class.java)
@@ -57,6 +60,7 @@ class GeminiProvider(
         ownerId: Long,
     ): LlmResponse {
         val contents = buildContents(messages, ownerId)
+        val config = buildGenerationConfig(ownerId)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -66,7 +70,7 @@ class GeminiProvider(
                     models.generateContent(
                         model,
                         contents,
-                        null
+                        config
                     )
                 }
             }
@@ -113,6 +117,7 @@ class GeminiProvider(
 
     override fun streamGenerate(messagesWithUser: List<Message>, ownerId: Long, onChunk: (String) -> Unit) {
         val contents = buildContents(messagesWithUser, ownerId)
+        val config = buildGenerationConfig(ownerId)
 
         var outcome = "success"
         val sample = Timer.start(meterRegistry)
@@ -125,7 +130,7 @@ class GeminiProvider(
                 val stream = models.generateContentStream(
                     model,
                     contents,
-                    null
+                    config
                 )
                 responseRef.set(stream)
 
@@ -176,6 +181,33 @@ class GeminiProvider(
                     .record(it, java.util.concurrent.TimeUnit.MILLISECONDS)
             }
         }
+    }
+
+    /**
+     * Per-user `GenerateContentConfig` overrides (`GeminiSettings`, `V7__add_user_gemini_settings.sql`),
+     * toggled via `PATCH /api/users/me/gemini-settings` — read here, not passed down from the chat
+     * endpoints, same as [RagService] being read inside [buildContents] rather than threaded down
+     * from the chat endpoints. `null` (not an empty builder) when the caller has no overrides set
+     * at all, matching this class's pre-existing behavior of passing `null` for config — Gemini's
+     * own defaults apply exactly as before this feature existed.
+     *
+     * `candidateCount` is threaded through as requested, but note [generate] only ever reads
+     * `response.text()` (the first candidate) — this doesn't yet surface additional candidates
+     * anywhere in `LlmResponse`/the SSE stream.
+     */
+    private fun buildGenerationConfig(ownerId: Long): GenerateContentConfig? {
+        val settings = userRepository.findById(ownerId).map { it.geminiSettings }.orElse(null)
+            ?: return null
+        if (settings.isEmpty()) return null
+
+        val builder = GenerateContentConfig.builder()
+        settings.systemInstruction?.let { builder.systemInstruction(Content.fromParts(Part.fromText(it))) }
+        settings.temperature?.let { builder.temperature(it) }
+        settings.topP?.let { builder.topP(it) }
+        settings.topK?.let { builder.topK(it) }
+        settings.candidateCount?.let { builder.candidateCount(it) }
+        settings.maxOutputTokens?.let { builder.maxOutputTokens(it) }
+        return builder.build()
     }
 
     /**

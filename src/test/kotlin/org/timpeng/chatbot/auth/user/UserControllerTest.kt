@@ -30,8 +30,10 @@ class UserControllerTest {
 
     private val ownerId = 1L
 
-    private fun userResponse(messageEmbeddingEnabled: Boolean = false) =
-        UserResponse(ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled)
+    private fun userResponse(
+        messageEmbeddingEnabled: Boolean = false,
+        geminiSettings: GeminiSettings = GeminiSettings(),
+    ) = UserResponse(ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings)
 
     @BeforeEach
     fun setUpAuth() {
@@ -80,5 +82,65 @@ class UserControllerTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.messageEmbeddingEnabled").value(false))
+    }
+
+    @Test
+    fun `PATCH gemini-settings applies the given overrides`() {
+        val settings = GeminiSettings(
+            systemInstruction = "Be concise",
+            temperature = 0.7f,
+            topP = 0.9f,
+            topK = 40f,
+            candidateCount = 1,
+            maxOutputTokens = 2048,
+        )
+        every { userService.updateGeminiSettings(ownerId, any()) } returns userResponse(geminiSettings = settings)
+
+        mockMvc.perform(
+            patch("/api/users/me/gemini-settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"systemInstruction":"Be concise","temperature":0.7,"topP":0.9,"topK":40,"candidateCount":1,"maxOutputTokens":2048}"""
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.geminiSettings.systemInstruction").value("Be concise"))
+            .andExpect(jsonPath("$.geminiSettings.temperature").value(0.7))
+            .andExpect(jsonPath("$.geminiSettings.maxOutputTokens").value(2048))
+
+        verify {
+            userService.updateGeminiSettings(
+                ownerId,
+                match { it.systemInstruction == "Be concise" && it.maxOutputTokens == 2048 }
+            )
+        }
+    }
+
+    @Test
+    fun `PATCH gemini-settings rejects an out-of-range temperature`() {
+        mockMvc.perform(
+            patch("/api/users/me/gemini-settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"temperature":3.5}""")
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { userService.updateGeminiSettings(any(), any()) }
+    }
+
+    @Test
+    fun `PATCH gemini-settings clears overrides when fields are omitted`() {
+        every { userService.updateGeminiSettings(ownerId, any()) } returns userResponse()
+
+        mockMvc.perform(
+            patch("/api/users/me/gemini-settings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{}""")
+        )
+            .andExpect(status().isOk)
+
+        verify {
+            userService.updateGeminiSettings(ownerId, match { it.toSettings() == GeminiSettings() })
+        }
     }
 }

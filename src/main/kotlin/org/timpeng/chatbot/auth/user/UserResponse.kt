@@ -7,6 +7,7 @@ data class UserResponse(
     val email: String,
     val createdAt: LocalDateTime,
     val messageEmbeddingEnabled: Boolean,
+    val geminiSettings: GeminiSettings,
 ) {
     companion object {
         fun from(user: User): UserResponse =
@@ -15,6 +16,7 @@ data class UserResponse(
                 email = user.email,
                 createdAt = user.createdAt,
                 messageEmbeddingEnabled = user.messageEmbeddingEnabled,
+                geminiSettings = user.geminiSettings,
             )
     }
 }

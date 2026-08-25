@@ -58,4 +58,45 @@ class UserServiceTest {
 
         assertThrows<IllegalStateException> { userService.setMessageEmbeddingEnabled(1L, true) }
     }
+
+    @Test
+    fun `updateGeminiSettings replaces the caller's settings and persists them`() {
+        val slot = slot<User>()
+        val request = UpdateGeminiSettingsRequest(
+            systemInstruction = "Be concise",
+            temperature = 0.7f,
+            topP = 0.9f,
+            topK = 40f,
+            candidateCount = 1,
+            maxOutputTokens = 2048,
+        )
+        every { userRepository.findById(1L) } returns Optional.of(user)
+        every { userRepository.save(capture(slot)) } answers { slot.captured }
+
+        val result = userService.updateGeminiSettings(1L, request)
+
+        assertEquals(request.toSettings(), slot.captured.geminiSettings)
+        assertEquals(request.toSettings(), result.geminiSettings)
+    }
+
+    @Test
+    fun `updateGeminiSettings with an empty request clears previous overrides`() {
+        val slot = slot<User>()
+        val userWithSettings = user.copy(geminiSettings = GeminiSettings(temperature = 0.9f))
+        every { userRepository.findById(1L) } returns Optional.of(userWithSettings)
+        every { userRepository.save(capture(slot)) } answers { slot.captured }
+
+        userService.updateGeminiSettings(1L, UpdateGeminiSettingsRequest())
+
+        assertEquals(GeminiSettings(), slot.captured.geminiSettings)
+    }
+
+    @Test
+    fun `updateGeminiSettings throws when the authenticated userId has no row`() {
+        every { userRepository.findById(1L) } returns Optional.empty()
+
+        assertThrows<IllegalStateException> {
+            userService.updateGeminiSettings(1L, UpdateGeminiSettingsRequest())
+        }
+    }
 }

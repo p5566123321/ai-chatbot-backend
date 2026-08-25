@@ -2,6 +2,7 @@ package org.timpeng.chatbot.llm
 
 import com.google.genai.Models
 import com.google.genai.types.Content
+import com.google.genai.types.GenerateContentConfig
 import com.google.genai.types.GenerateContentResponse
 import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -12,6 +13,9 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.timpeng.chatbot.auth.user.GeminiSettings
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
@@ -27,13 +31,25 @@ class GeminiProviderTest {
     private lateinit var geminiProvider: GeminiProvider
     private val meterRegistry: MeterRegistry = SimpleMeterRegistry()
     private val ragService: RagService = mockk(relaxed = true)
+    private val userRepository: UserRepository = mockk()
 
     private val conversation = Conversation(id = 1L, uuid = "test-uuid")
     private val ownerId = 1L
 
+    // Empty GeminiSettings (the User default) makes buildGenerationConfig return null — every
+    // existing test below asserts a literal `null` third arg, unchanged from before this feature
+    // existed, so this is the baseline every test gets unless it stubs geminiSettings itself.
+    private fun userWithSettings(settings: GeminiSettings = GeminiSettings()) = User(
+        id = ownerId,
+        email = "user@example.com",
+        passwordHash = "hashed",
+        geminiSettings = settings,
+    )
+
     @BeforeEach
     fun setUp() {
-        geminiProvider = GeminiProvider(models, meterRegistry, ragService)
+        every { userRepository.findById(ownerId) } returns Optional.of(userWithSettings())
+        geminiProvider = GeminiProvider(models, meterRegistry, ragService, userRepository)
     }
 
     private fun stubGenerate(replyText: String): GenerateContentResponse {
@@ -201,6 +217,84 @@ class GeminiProviderTest {
                 any(),
                 match<List<Content>> { it.isEmpty() },
                 null
+            )
+        }
+    }
+
+    // buildGenerationConfig (per-user GenerateContentConfig overrides)
+
+    @Test
+    fun `generate passes null config when the caller has no owner row`() {
+        every { userRepository.findById(ownerId) } returns Optional.empty()
+        stubGenerate("Response")
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify { models.generateContent(any(), any<List<Content>>(), null) }
+    }
+
+    @Test
+    fun `generate builds a GenerateContentConfig from the caller's gemini settings`() {
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            userWithSettings(
+                GeminiSettings(
+                    systemInstruction = "Be concise",
+                    temperature = 0.7f,
+                    topP = 0.9f,
+                    topK = 40f,
+                    candidateCount = 2,
+                    maxOutputTokens = 2048,
+                )
+            )
+        )
+        val response: GenerateContentResponse = mockk(relaxed = true)
+        every { response.text() } returns "Response"
+        every { response.usageMetadata() } returns Optional.empty()
+        every { models.generateContent(any<String>(), any<List<Content>>(), any<GenerateContentConfig>()) } returns response
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify {
+            models.generateContent(
+                any(),
+                any<List<Content>>(),
+                match<GenerateContentConfig> { config ->
+                    config.systemInstruction().get().parts().get()[0].text().get() == "Be concise" &&
+                        config.temperature().get() == 0.7f &&
+                        config.topP().get() == 0.9f &&
+                        config.topK().get() == 40f &&
+                        config.candidateCount().get() == 2 &&
+                        config.maxOutputTokens().get() == 2048
+                }
+            )
+        }
+    }
+
+    @Test
+    fun `generate omits unset fields from the built config`() {
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            userWithSettings(GeminiSettings(temperature = 0.5f))
+        )
+        val response: GenerateContentResponse = mockk(relaxed = true)
+        every { response.text() } returns "Response"
+        every { response.usageMetadata() } returns Optional.empty()
+        every { models.generateContent(any<String>(), any<List<Content>>(), any<GenerateContentConfig>()) } returns response
+
+        geminiProvider.generate(listOf(
+            Message(conversation = conversation, role = Role.USER, content = "Hi")
+        ), ownerId)
+
+        verify {
+            models.generateContent(
+                any(),
+                any<List<Content>>(),
+                match<GenerateContentConfig> { config ->
+                    config.temperature().get() == 0.5f && config.topP().isEmpty
+                }
             )
         }
     }

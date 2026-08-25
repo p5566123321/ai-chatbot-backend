@@ -1,6 +1,7 @@
 package org.timpeng.chatbot.auth.user
 
 import jakarta.persistence.Column
+import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -32,4 +33,12 @@ data class User(
     // real embedding API call per message.
     @Column(nullable = false)
     val messageEmbeddingEnabled: Boolean = false,
+
+    // Per-user GenerateContentConfig overrides, toggled via PATCH /api/users/me/gemini-settings
+    // (see UserController/GeminiSettings) — read by GeminiProvider per request via ownerId.
+    // Embeddable rather than 6 more flat columns, all independently nullable
+    // (V7__add_user_gemini_settings.sql); an all-null GeminiSettings() default means every field
+    // falls back to the Gemini API's own default, same as before this feature existed.
+    @Embedded
+    val geminiSettings: GeminiSettings = GeminiSettings(),
 )

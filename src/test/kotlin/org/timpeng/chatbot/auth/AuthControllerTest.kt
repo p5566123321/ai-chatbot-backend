@@ -10,6 +10,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
+import org.timpeng.chatbot.auth.user.GeminiSettings
 import org.timpeng.chatbot.auth.user.UserResponse
 import java.time.Instant
 import java.time.LocalDateTime
@@ -28,7 +29,10 @@ class AuthControllerTest {
     @Test
     fun `POST register with a well-formed body returns 201`() {
         every { authService.register("user@example.com", "hunter2pass") } returns
-                UserResponse(1L, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled = false)
+                UserResponse(
+                    1L, "user@example.com", LocalDateTime.now(),
+                    messageEmbeddingEnabled = false, geminiSettings = GeminiSettings(),
+                )
 
         mockMvc.perform(
             post("/api/auth/register")

@@ -183,6 +183,17 @@ does need a new branch — it doesn't discover providers automatically). Two imp
 `Role.geminiName` maps the internal `USER/ASSISTANT/SYSTEM` enum to Gemini's `user/model` role
 strings.
 
+`GeminiProvider.buildGenerationConfig` reads per-user `GenerateContentConfig` overrides
+(`User.geminiSettings`/`GeminiSettings` — systemInstruction/temperature/topP/topK/candidateCount/
+maxOutputTokens, `V7__add_user_gemini_settings.sql`) via `ownerId`, same pattern as `RagService`
+being read inside `buildContents` rather than threaded down from the chat endpoints. Every field
+is independently nullable; `null` means "don't set this on the request" (Gemini's own default
+applies), and an all-null `GeminiSettings` makes `buildGenerationConfig` return `null` outright —
+identical to this class's behavior before the feature existed. Set via
+`PATCH /api/users/me/gemini-settings` (`UserController`) as a full replace, not a partial merge.
+`candidateCount` is passed through but not consumed anywhere yet — `generate` only ever reads
+`response.text()` (the first candidate).
+
 ### Metrics
 
 Micrometer/Prometheus timers are threaded through the hot path deliberately, not just at the
