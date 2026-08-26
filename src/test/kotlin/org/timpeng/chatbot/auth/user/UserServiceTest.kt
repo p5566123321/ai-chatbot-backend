@@ -188,4 +188,38 @@ class UserServiceTest {
 
         assertThrows<IllegalStateException> { userService.setRagEnabled(1L, false) }
     }
+
+    @Test
+    fun `updateHistoryMaxMessages sets and persists an override`() {
+        val slot = slot<User>()
+        every { userRepository.findById(1L) } returns Optional.of(user)
+        every { userRepository.save(capture(slot)) } answers { slot.captured }
+
+        val result = userService.updateHistoryMaxMessages(1L, UpdateHistoryMaxMessagesRequest(maxMessages = 25))
+
+        assertEquals(25, slot.captured.historyMaxMessages)
+        assertEquals(25, result.historyMaxMessages)
+    }
+
+    @Test
+    fun `updateHistoryMaxMessages with null clears the override`() {
+        val slot = slot<User>()
+        val userWithOverride = user.copy(historyMaxMessages = 25)
+        every { userRepository.findById(1L) } returns Optional.of(userWithOverride)
+        every { userRepository.save(capture(slot)) } answers { slot.captured }
+
+        val result = userService.updateHistoryMaxMessages(1L, UpdateHistoryMaxMessagesRequest(maxMessages = null))
+
+        assertNull(slot.captured.historyMaxMessages)
+        assertNull(result.historyMaxMessages)
+    }
+
+    @Test
+    fun `updateHistoryMaxMessages throws when the authenticated userId has no row`() {
+        every { userRepository.findById(1L) } returns Optional.empty()
+
+        assertThrows<IllegalStateException> {
+            userService.updateHistoryMaxMessages(1L, UpdateHistoryMaxMessagesRequest(maxMessages = 25))
+        }
+    }
 }

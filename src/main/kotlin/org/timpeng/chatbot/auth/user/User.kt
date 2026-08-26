@@ -56,4 +56,12 @@ data class User(
     // false default (V9__add_user_rag_enabled_flag.sql).
     @Column(nullable = false)
     val ragEnabled: Boolean = true,
+
+    // Per-user override for how many history messages DatabaseConversationHistoryService/
+    // ConversationCacheService load as LLM context (roadmap.md Phase 6's last item). null falls
+    // back to the global app.conversation.cache.max-msg default — same "null = use the default"
+    // convention as GeminiSettings' fields (V10__add_user_history_max_messages.sql). Set via
+    // PATCH /api/users/me/history-max-messages.
+    @Column(name = "history_max_messages")
+    val historyMaxMessages: Int? = null,
 )

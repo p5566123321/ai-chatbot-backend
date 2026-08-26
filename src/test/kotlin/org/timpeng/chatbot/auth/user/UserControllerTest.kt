@@ -36,9 +36,10 @@ class UserControllerTest {
         geminiSettings: GeminiSettings = GeminiSettings(),
         hasGeminiApiKey: Boolean = false,
         ragEnabled: Boolean = true,
+        historyMaxMessages: Int? = null,
     ) = UserResponse(
         ownerId, "user@example.com", LocalDateTime.now(), messageEmbeddingEnabled, geminiSettings,
-        hasGeminiApiKey, ragEnabled,
+        hasGeminiApiKey, ragEnabled, historyMaxMessages,
     )
 
     @BeforeEach
@@ -231,5 +232,64 @@ class UserControllerTest {
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.ragEnabled").value(true))
+    }
+
+    @Test
+    fun `PATCH history-max-messages sets an override`() {
+        every { userService.updateHistoryMaxMessages(ownerId, any()) } returns
+            userResponse(historyMaxMessages = 25)
+
+        mockMvc.perform(
+            patch("/api/users/me/history-max-messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"maxMessages":25}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.historyMaxMessages").value(25))
+
+        verify {
+            userService.updateHistoryMaxMessages(ownerId, match { it.maxMessages == 25 })
+        }
+    }
+
+    @Test
+    fun `PATCH history-max-messages with null clears the override`() {
+        every { userService.updateHistoryMaxMessages(ownerId, any()) } returns userResponse()
+
+        mockMvc.perform(
+            patch("/api/users/me/history-max-messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"maxMessages":null}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.historyMaxMessages").value(org.hamcrest.Matchers.nullValue()))
+
+        verify {
+            userService.updateHistoryMaxMessages(ownerId, match { it.maxMessages == null })
+        }
+    }
+
+    @Test
+    fun `PATCH history-max-messages rejects a value above the bound`() {
+        mockMvc.perform(
+            patch("/api/users/me/history-max-messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"maxMessages":101}""")
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { userService.updateHistoryMaxMessages(any(), any()) }
+    }
+
+    @Test
+    fun `PATCH history-max-messages rejects a non-positive value`() {
+        mockMvc.perform(
+            patch("/api/users/me/history-max-messages")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"maxMessages":0}""")
+        )
+            .andExpect(status().isBadRequest)
+
+        verify(exactly = 0) { userService.updateHistoryMaxMessages(any(), any()) }
     }
 }

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.exception.ConversationNotFoundException
@@ -22,6 +23,7 @@ class DatabaseConversationHistoryService(
     private val conversationRepository: ConversationRepository,
     private val messageRepository: MessageRepository,
     private val meterRegistry: MeterRegistry,
+    private val userRepository: UserRepository,
     @Value($$"${app.conversation.cache.max-msg}") private val maxMessages: Int = 10,
 ) : ConversationHistoryService {
 
@@ -32,7 +34,12 @@ class DatabaseConversationHistoryService(
 
         val conversation = conversationRepository.findByUuid(conversationId)
             .orElseThrow { ConversationNotFoundException("Conversation not found: $conversationId") }
-        val pageable: Pageable = PageRequest.of(0, maxMessages)
+        // Per-user override (users.history_max_messages, V10) falls back to the global default —
+        // a pre-auth conversation (ownerId == null) or an owner with no override both land here.
+        val effectiveMax = conversation.ownerId
+            ?.let { userRepository.findById(it).map { user -> user.historyMaxMessages }.orElse(null) }
+            ?: maxMessages
+        val pageable: Pageable = PageRequest.of(0, effectiveMax)
         val messages = messageRepository.findByConversationOrderByCreatedAt(conversation, pageable)
 
         val durationSec = sample.stop(

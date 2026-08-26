@@ -11,6 +11,7 @@ data class UserResponse(
     // Whether a BYOK key is stored — never the ciphertext or plaintext itself (docs/decision/010).
     val hasGeminiApiKey: Boolean = false,
     val ragEnabled: Boolean = true,
+    val historyMaxMessages: Int? = null,
 ) {
     companion object {
         fun from(user: User): UserResponse =
@@ -20,6 +21,7 @@ data class UserResponse(
                 createdAt = user.createdAt,
                 messageEmbeddingEnabled = user.messageEmbeddingEnabled,
                 ragEnabled = user.ragEnabled,
+                historyMaxMessages = user.historyMaxMessages,
                 // `?: GeminiSettings()` guards a real Hibernate/JPA quirk, not defensive
                 // over-caution: when every column an @Embedded value maps to is NULL in the row
                 // (true for any user who never called PATCH /gemini-settings), Hibernate

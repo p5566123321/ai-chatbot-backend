@@ -28,6 +28,7 @@
   API key, AES-256-GCM at rest) — see ADR-010. Deliberately scoped to the chat path only; the
   embedding model/embedding BYOK is called out there as follow-up work, blocked on the shared
   `vector(768)` column and `EmbeddingProvider.embed` not carrying an `ownerId`.
-- **Remaining**: history window size (moving `app.conversation.cache.max-msg` from a global
-  config to a per-user/per-conversation value) — no dependency on the other two, can be pulled
-  forward opportunistically whenever useful.
+- **Done**: history window size — `users.history_max_messages` (V10, nullable, null = use the
+  global `app.conversation.cache.max-msg` default) via `PATCH /api/users/me/history-max-messages`,
+  resolved independently by `DatabaseConversationHistoryService`/`ConversationCacheService` so DB
+  and cache reads agree. Phase 6 is now fully done.

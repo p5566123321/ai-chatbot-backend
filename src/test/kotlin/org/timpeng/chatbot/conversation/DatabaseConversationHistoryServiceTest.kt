@@ -7,6 +7,8 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.MessageRepository
 import org.timpeng.chatbot.conversation.message.Role
@@ -17,6 +19,7 @@ import kotlin.test.assertEquals
 class DatabaseConversationHistoryServiceTest {
     private val conversationRepository: ConversationRepository = mockk()
     private val messageRepository: MessageRepository = mockk()
+    private val userRepository: UserRepository = mockk()
 
     private lateinit var databaseConversationHistoryService: DatabaseConversationHistoryService
 
@@ -29,6 +32,7 @@ class DatabaseConversationHistoryServiceTest {
             conversationRepository,
             messageRepository,
             SimpleMeterRegistry(),
+            userRepository,
             maxMessages = 10,
         )
     }
@@ -54,5 +58,39 @@ class DatabaseConversationHistoryServiceTest {
             databaseConversationHistoryService.getHistory(conversationId)
         }
         verify(exactly = 0) { messageRepository.findByConversationOrderByCreatedAt(any(), any()) }
+    }
+
+    @Test
+    fun `getHistory uses the owner's history-max-messages override instead of the global default`() {
+        val ownerId = 42L
+        val owned = conversation.copy(ownerId = ownerId)
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(owned)
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            User(id = ownerId, email = "user@example.com", passwordHash = "hashed", historyMaxMessages = 3)
+        )
+        every { messageRepository.findByConversationOrderByCreatedAt(owned, any()) } returns emptyList()
+
+        databaseConversationHistoryService.getHistory(conversationId)
+
+        verify {
+            messageRepository.findByConversationOrderByCreatedAt(owned, match { it.pageSize == 3 })
+        }
+    }
+
+    @Test
+    fun `getHistory falls back to the global default when the owner has no override`() {
+        val ownerId = 42L
+        val owned = conversation.copy(ownerId = ownerId)
+        every { conversationRepository.findByUuid(conversationId) } returns Optional.of(owned)
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            User(id = ownerId, email = "user@example.com", passwordHash = "hashed")
+        )
+        every { messageRepository.findByConversationOrderByCreatedAt(owned, any()) } returns emptyList()
+
+        databaseConversationHistoryService.getHistory(conversationId)
+
+        verify {
+            messageRepository.findByConversationOrderByCreatedAt(owned, match { it.pageSize == 10 })
+        }
     }
 }

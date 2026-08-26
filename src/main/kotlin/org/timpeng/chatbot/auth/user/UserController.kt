@@ -60,4 +60,13 @@ class UserController(private val userService: UserService) {
         @RequestBody request: UpdateRagEnabledRequest,
     ): UserResponse =
         userService.setRagEnabled(userId, request.enabled)
+
+    // Full replace, null clears back to the global app.conversation.cache.max-msg default — see
+    // UpdateHistoryMaxMessagesRequest's kdoc.
+    @PatchMapping("/history-max-messages")
+    fun updateHistoryMaxMessages(
+        @CurrentUserId userId: Long,
+        @Valid @RequestBody request: UpdateHistoryMaxMessagesRequest,
+    ): UserResponse =
+        userService.updateHistoryMaxMessages(userId, request)
 }

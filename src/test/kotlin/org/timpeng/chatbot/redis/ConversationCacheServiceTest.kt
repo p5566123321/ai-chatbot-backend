@@ -11,11 +11,14 @@ import org.junit.jupiter.api.Test
 import org.springframework.data.redis.core.ListOperations
 import org.springframework.data.redis.core.RedisCallback
 import org.springframework.data.redis.core.StringRedisTemplate
+import org.timpeng.chatbot.auth.user.User
+import org.timpeng.chatbot.auth.user.UserRepository
 import org.timpeng.chatbot.conversation.Conversation
 import org.timpeng.chatbot.conversation.message.Message
 import org.timpeng.chatbot.conversation.message.Role
 import tools.jackson.databind.ObjectMapper
 import java.time.Duration
+import java.util.Optional
 import kotlin.test.assertEquals
 
 class ConversationCacheServiceTest {
@@ -23,6 +26,7 @@ class ConversationCacheServiceTest {
     private val redisTemplate: StringRedisTemplate = mockk()
     private val listOps: ListOperations<String, String> = mockk()
     private val objectMapper = ObjectMapper()
+    private val userRepository: UserRepository = mockk()
     private lateinit var conversationCacheService: ConversationCacheService
 
     private val conversationId = "test-uuid"
@@ -39,7 +43,8 @@ class ConversationCacheServiceTest {
     @BeforeEach
     fun setUp() {
         every { redisTemplate.opsForList() } returns listOps
-        conversationCacheService = ConversationCacheService(redisTemplate, objectMapper, maxMessages = 10, ttlMinutes = 30)
+        conversationCacheService =
+            ConversationCacheService(redisTemplate, objectMapper, userRepository, maxMessages = 10, ttlMinutes = 30)
     }
 
     @Test
@@ -77,6 +82,28 @@ class ConversationCacheServiceTest {
         verify { listOps.rightPush(key, objectMapper.writeValueAsString(message)) }
         verify { listOps.trim(key, -10L, -1L) }
         verify { redisTemplate.expire(key, Duration.ofMinutes(30)) }
+    }
+
+    @Test
+    fun `saveChatMessage trims to the owner's history-max-messages override instead of the global default`() {
+        val ownerId = 42L
+        val ownedConversation = conversation.copy(ownerId = ownerId)
+        val ownedMessage = message.copy(conversation = ownedConversation)
+        every { userRepository.findById(ownerId) } returns Optional.of(
+            User(id = ownerId, email = "user@example.com", passwordHash = "hashed", historyMaxMessages = 3)
+        )
+        val callback = slot<RedisCallback<Any?>>()
+        every { redisTemplate.executePipelined(capture(callback)) } answers {
+            callback.captured.doInRedis(mockk(relaxed = true))
+            emptyList()
+        }
+        every { listOps.rightPush(key, any()) } returns 1L
+        every { listOps.trim(key, -3L, -1L) } just Runs
+        every { redisTemplate.expire(key, Duration.ofMinutes(30)) } returns true
+
+        conversationCacheService.saveChatMessage(conversationId, ownedMessage)
+
+        verify { listOps.trim(key, -3L, -1L) }
     }
 
     @Test

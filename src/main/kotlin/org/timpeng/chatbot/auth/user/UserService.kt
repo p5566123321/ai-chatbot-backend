@@ -74,4 +74,12 @@ class UserService(
         val updated = userRepository.save(user.copy(ragEnabled = enabled))
         return UserResponse.from(updated)
     }
+
+    // Full replace, not a merge — null clears back to the global default. See
+    // UpdateHistoryMaxMessagesRequest's kdoc.
+    fun updateHistoryMaxMessages(userId: Long, request: UpdateHistoryMaxMessagesRequest): UserResponse {
+        val user = requireUser(userId)
+        val updated = userRepository.save(user.copy(historyMaxMessages = request.maxMessages))
+        return UserResponse.from(updated)
+    }
 }

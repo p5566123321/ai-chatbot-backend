@@ -95,6 +95,16 @@ the sole implementation — this exists specifically to A/B the Redis benefit un
 as a normal runtime toggle. Adding a third caching strategy means adding another
 `ConversationHistoryService` implementation, not branching inside an existing one.
 
+`app.conversation.cache.max-msg` is only the *global default* — Phase 6's last item,
+`users.history_max_messages` (V10, nullable, null = use the default), lets a caller override it via
+`PATCH /api/users/me/history-max-messages`. Both `DatabaseConversationHistoryService.getHistory`
+(via `conversation.ownerId`) and `ConversationCacheService.saveChatMessage` (via
+`message.conversation.ownerId`) resolve it independently so a cache-populated read and a
+DB-fallback read agree on the count. One consequence worth knowing: raising the override doesn't
+retroactively backfill a conversation's Redis list — that list is only ever trimmed *smaller* on
+write (`LTRIM`), never grown from Postgres, so an existing short cached list stays short until it
+naturally expires (`ttl-min`) or enough new messages get pushed through it.
+
 ### Redis usage is split by responsibility, not bundled into one service
 
 `org.timpeng.chatbot.redis` has two single-purpose `@Service` classes instead of one grab-bag
