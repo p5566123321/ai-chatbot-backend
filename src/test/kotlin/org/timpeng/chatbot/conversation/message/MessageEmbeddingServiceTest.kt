@@ -37,6 +37,16 @@ class MessageEmbeddingServiceTest {
     }
 
     @Test
+    fun `embedAsync does nothing when no embedding provider is configured`() {
+        val serviceWithNoProvider =
+            MessageEmbeddingService(embeddingProvider = null, messageEmbeddingRepository, userRepository)
+
+        serviceWithNoProvider.embedAsync(message(ownerId = 1L))
+
+        verify(exactly = 0) { userRepository.findById(any()) }
+    }
+
+    @Test
     fun `embedAsync does nothing when the owner has the switch off`() {
         every { userRepository.findById(1L) } returns Optional.of(user(enabled = false))
 

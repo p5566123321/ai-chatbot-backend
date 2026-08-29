@@ -7,6 +7,8 @@ import io.mockk.verify
 import org.junit.jupiter.api.Test
 import org.timpeng.chatbot.auth.user.User
 import org.timpeng.chatbot.crypto.ApiKeyCipher
+import org.timpeng.chatbot.exception.MissingApiKeyException
+import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
 
 class GeminiClientFactoryTest {
@@ -40,5 +42,13 @@ class GeminiClientFactoryTest {
 
         verify { apiKeyCipher.decrypt("ciphertext") }
         assert(result !== defaultModels) { "expected a fresh per-user Models, not the default bean" }
+    }
+
+    @Test
+    fun `modelsFor throws MissingApiKeyException when there is no BYOK key and no system default`() {
+        val factoryWithNoDefault = GeminiClientFactory(defaultModels = null, apiKeyCipher = apiKeyCipher)
+
+        assertFailsWith<MissingApiKeyException> { factoryWithNoDefault.modelsFor(user()) }
+        assertFailsWith<MissingApiKeyException> { factoryWithNoDefault.modelsFor(null) }
     }
 }

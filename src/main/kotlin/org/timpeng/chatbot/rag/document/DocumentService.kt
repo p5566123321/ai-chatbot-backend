@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
 import org.timpeng.chatbot.exception.DocumentNotFoundException
+import org.timpeng.chatbot.exception.RagUnavailableException
 import org.timpeng.chatbot.rag.embedding.EmbeddingProvider
 import org.timpeng.chatbot.rag.search.DocumentChunkInput
 import org.timpeng.chatbot.rag.search.VectorSearchPort
@@ -24,7 +25,10 @@ import java.util.*
 @Service
 class DocumentService(
     private val documentRepository: DocumentRepository,
-    private val embeddingProvider: EmbeddingProvider,
+    // Null when no system-wide Gemini key is configured (GenAIConfig) — RAG has no BYOK path, so
+    // upload/replace reject outright (RagUnavailableException) rather than accepting a document
+    // that can never actually get embedded.
+    private val embeddingProvider: EmbeddingProvider?,
     private val textSplitter: TextSplitter,
     private val vectorSearchPort: VectorSearchPort,
 ) {
@@ -32,6 +36,8 @@ class DocumentService(
     private val logger = LoggerFactory.getLogger(DocumentService::class.java)
 
     suspend fun upload(file: MultipartFile, ownerId: Long): DocumentJpaEntity {
+        val embeddingProvider = embeddingProvider
+            ?: throw RagUnavailableException("RAG is not configured on this deployment (no system-wide Gemini API key)")
         require(!file.isEmpty) { "Uploaded file is empty" }
         val title = file.originalFilename?.takeIf { it.isNotBlank() } ?: "untitled"
 
@@ -126,6 +132,8 @@ class DocumentService(
     }
 
     suspend fun replace(file: MultipartFile, documentId: String, ownerId: Long): DocumentJpaEntity {
+        val embeddingProvider = embeddingProvider
+            ?: throw RagUnavailableException("RAG is not configured on this deployment (no system-wide Gemini API key)")
         require(!file.isEmpty) { "Uploaded file is empty" }
 
         // Ownership check + 404, same as getDocument — a documentId that doesn't resolve to this

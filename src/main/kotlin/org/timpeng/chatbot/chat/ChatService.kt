@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
 import org.timpeng.chatbot.conversation.ConversationService
 import org.timpeng.chatbot.exception.ChatException
+import org.timpeng.chatbot.exception.MissingApiKeyException
 import org.timpeng.chatbot.llm.LlmProvider
 import org.timpeng.chatbot.queue.JobQueue
 import org.timpeng.chatbot.redis.GeneratingStatusService
@@ -30,6 +31,10 @@ class ChatService(
         val llmResponse = runCatching {
             llmProvider.generate(messages, ownerId)
         }.getOrElse { e ->
+            // MissingApiKeyException carries a specific, caller-actionable 400 (GlobalExceptionHandler)
+            // — "add your own key" is a materially different signal than "the LLM is unavailable,"
+            // so it's let through as-is rather than flattened into the generic wrap below.
+            if (e is MissingApiKeyException) throw e
             logger.error("LLM API failed", e)
             throw ChatException("AI service unable to response.", e)
         }

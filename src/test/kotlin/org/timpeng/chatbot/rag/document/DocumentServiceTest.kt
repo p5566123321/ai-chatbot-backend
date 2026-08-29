@@ -87,6 +87,18 @@ class DocumentServiceTest {
     }
 
     @Test
+    fun `upload throws RagUnavailableException when no embedding provider is configured`() {
+        val documentServiceWithNoProvider =
+            DocumentService(documentRepository, embeddingProvider = null, textSplitter, vectorSearchPort)
+        val file = MockMultipartFile("file", "notes.txt", "text/plain", "hello".toByteArray())
+
+        assertThrows<org.timpeng.chatbot.exception.RagUnavailableException> {
+            runBlocking { documentServiceWithNoProvider.upload(file, ownerId) }
+        }
+        verify(exactly = 0) { documentRepository.save(any()) }
+    }
+
+    @Test
     fun `upload splits, embeds, and upserts each chunk with its index, and returns the saved document`() = runBlocking {
         val file = MockMultipartFile("file", "notes.txt", "text/plain", "hello world foo bar baz".toByteArray())
         val savedDocument = DocumentJpaEntity(

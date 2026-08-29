@@ -172,6 +172,43 @@ class GlobalExceptionHandler {
             )
     }
 
+    // 400 - Bad Request (no BYOK key set and no system-wide fallback configured — see
+    // GenAIConfig/GeminiClientFactory)
+    @ExceptionHandler(MissingApiKeyException::class)
+    fun handleMissingApiKey(ex: MissingApiKeyException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("MissingApiKeyException: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.BAD_REQUEST)
+            .body(
+                ErrorResponse(
+                    status = 400,
+                    error = "MISSING_API_KEY",
+                    message = ex.message ?: "No Gemini API key configured"
+                )
+            )
+    }
+
+    // 503 - Service Unavailable (no system-wide embedding key configured — RAG has no per-user
+    // BYOK path, unlike chat, so this is a deployment-wide condition, not something this caller
+    // can fix themselves)
+    @ExceptionHandler(RagUnavailableException::class)
+    fun handleRagUnavailable(ex: RagUnavailableException): ResponseEntity<ErrorResponse> {
+
+        logger.warn("RagUnavailableException: {}", ex.message)
+
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .body(
+                ErrorResponse(
+                    status = 503,
+                    error = "RAG_UNAVAILABLE",
+                    message = ex.message ?: "RAG is not configured on this deployment"
+                )
+            )
+    }
+
     // 409 - Conflict (ADR-007)
     @ExceptionHandler(UserAlreadyExistsException::class)
     fun handleUserAlreadyExists(ex: UserAlreadyExistsException): ResponseEntity<ErrorResponse> {

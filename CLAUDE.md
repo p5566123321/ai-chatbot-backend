@@ -13,9 +13,10 @@ and `docs/decision/*.md` for the ADRs behind current design choices.
 ## Commands
 
 ```bash
-# Run the app (needs .env — copy .env.example and fill in GOOGLE_API_KEY, DB_*, REDIS_*,
-# GEMINI_MODEL, JWT_SECRET — the last must be a real random value, e.g. `openssl rand -base64 64`;
-# anything shorter than 256 bits fails HS-family key validation at startup, by design)
+# Run the app (needs .env — copy .env.example and fill in DB_*, REDIS_*, GEMINI_MODEL, JWT_SECRET
+# — the last must be a real random value, e.g. `openssl rand -base64 64`; anything shorter than
+# 256 bits fails HS-family key validation at startup, by design. GOOGLE_API_KEY is optional since
+# ADR-011 — leave it blank to require every caller to bring their own key via BYOK)
 ./gradlew bootRun
 
 # Build
@@ -227,6 +228,21 @@ holds a user-supplied Gemini API key (BYOK), AES-256-GCM-encrypted at rest
 `UserResponse` echoes back wholesale). Both are chat-only — `GeminiEmbeddingProvider` is untouched;
 see ADR-010's Context for why (fixed `vector(768)` columns, `EmbeddingProvider.embed` not carrying
 an `ownerId`).
+
+**System key is optional (ADR-011)**: `app.llm.gemini.system-api-key`/`GOOGLE_API_KEY` can be left
+blank — `GenAIConfig` then registers no `Client`/`Models` bean at all (a `null`-returning `@Bean`
+method, not a startup failure) rather than the old behavior of crashing on boot without it. A chat
+caller with neither a BYOK key nor this fallback gets `MissingApiKeyException` → 400
+`MISSING_API_KEY`. RAG has no BYOK path (see above), so a missing system key disables it
+deployment-wide: `GeminiEmbeddingProvider` is no longer `@Service`/component-scanned at all — it's
+wired by an explicit `@Bean` factory method in `GenAIConfig` (`models?.let { GeminiEmbeddingProvider(...) }`);
+a class-level `@ConditionalOnBean(Models::class)` was tried first and doesn't reliably gate a
+component-scanned class (Spring Boot's own docs warn it's registration-order dependent — it let the
+bean get instantiated anyway and crash on a missing required `Models`). `RagService`/
+`DocumentService`/`MessageEmbeddingService` all take `EmbeddingProvider?`
+— `RagService.buildPrompt` falls back to the raw query, `MessageEmbeddingService.embedAsync`
+no-ops, and `DocumentService.upload`/`replace` reject upfront with `RagUnavailableException` → 503
+`RAG_UNAVAILABLE` rather than accepting an upload that can never be embedded.
 
 ### Metrics
 

@@ -6,16 +6,19 @@ import io.micrometer.core.instrument.MeterRegistry
 import io.micrometer.core.instrument.Timer
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
-import org.springframework.stereotype.Service
 import org.timpeng.chatbot.exception.LlmException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-@Service
-@ConditionalOnProperty(name = ["app.embedding.provider"], havingValue = "gemini")
+// Deliberately NOT @Service/component-scanned, and deliberately NOT gated by a class-level
+// @ConditionalOnBean(Models::class) — Spring Boot's own docs warn @ConditionalOnBean on a
+// @Component is unreliable (bean-registration-order dependent: it can evaluate before GenAIConfig's
+// Models bean has been registered, letting this class get instantiated anyway and then fail to
+// autowire a required non-null Models — this is exactly what happened when it was tried that way,
+// see docs/decision/011). Instead GenAIConfig.geminiEmbeddingProvider wires this up explicitly as a
+// @Bean factory method, where the null-propagation trick (no Models -> no bean) is reliable.
 class GeminiEmbeddingProvider(
     private val models: Models,
     private val meterRegistry: MeterRegistry

@@ -30,7 +30,10 @@ import org.timpeng.chatbot.rag.embedding.EmbeddingProvider
  */
 @Service
 class MessageEmbeddingService(
-    private val embeddingProvider: EmbeddingProvider,
+    // Null when no system-wide Gemini key is configured (GenAIConfig) — RAG has no BYOK path, so
+    // this is a deployment-wide off-switch: embedAsync just no-ops rather than erroring, same
+    // spirit as the ownerId==null / switch-disabled early-returns below.
+    private val embeddingProvider: EmbeddingProvider?,
     private val messageEmbeddingRepository: MessageEmbeddingJdbcRepository,
     private val userRepository: UserRepository,
 ) {
@@ -41,6 +44,8 @@ class MessageEmbeddingService(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun embedAsync(message: Message) {
+        val embeddingProvider = embeddingProvider ?: return
+
         // Pre-auth conversations (ownerId == null, ADR-007) have no user to read the switch from
         // — nothing to embed on behalf of. This lookup runs synchronously (indexed PK read) on
         // the caller's thread rather than inside the background scope below, so the expensive

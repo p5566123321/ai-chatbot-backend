@@ -15,6 +15,11 @@ spring:
       port: ${REDIS_PORT}
       password: ${REDIS_PASSWORD}
       database: ${REDIS_DB}
+      # Off by default (local/docker-compose Redis has no TLS listener). Managed Redis providers
+      # that only expose a TLS endpoint on the standard port - e.g. Upstash - need this on, via
+      # REDIS_SSL_ENABLED=true.
+      ssl:
+        enabled: ${REDIS_SSL_ENABLED:false}
   datasource:
     url: ${DB_URL}
     username: ${DB_USER}
@@ -46,6 +51,12 @@ app:
     # queue pipeline without real LLM latency/cost, see FakeLlmProvider.
     provider: ${LLM_PROVIDER:gemini}
     gemini:
+      # Optional — no default. GenAIConfig only creates a system-wide Client/Models bean when this
+      # is set; when it's blank, chat falls back to requiring each caller's own BYOK key
+      # (GeminiClientFactory throws MissingApiKeyException for a caller with neither) and RAG's
+      # embedding pipeline is disabled entirely (no per-user BYOK path exists for embeddings — see
+      # RagUnavailableException). See docs/decision/010 and GenAIConfig's kdoc.
+      system-api-key: ${GOOGLE_API_KEY:}
       model: ${GEMINI_MODEL}
       timeout-ms: ${GEMINI_TIMEOUT_MS:30000}
       embedding-model: ${GEMINI_EMBEDDING_MODEL:gemini-embedding-2}

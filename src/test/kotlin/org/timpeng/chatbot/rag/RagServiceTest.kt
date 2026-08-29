@@ -92,6 +92,20 @@ class RagServiceTest {
     }
 
     @Test
+    fun `buildPrompt skips retrieval entirely when no embedding provider is configured`() = runBlocking {
+        val ragServiceWithNoProvider = RagService(
+            embeddingProvider = null, vectorSearchPort, documentService, userRepository, topK = 5, similarityThreshold = 0.0
+        )
+
+        val prompt = ragServiceWithNoProvider.buildPrompt("What is RAG?", ownerId)
+
+        assertEquals("What is RAG?", prompt)
+        coVerify(exactly = 0) { userRepository.findById(any()) }
+        coVerify(exactly = 0) { documentService.checkDocument(any()) }
+        coVerify(exactly = 0) { vectorSearchPort.findSimilarChunks(any(), any(), any()) }
+    }
+
+    @Test
     fun `buildPrompt skips retrieval entirely when the caller has turned RAG off`() = runBlocking {
         every { userRepository.findById(ownerId) } returns
             Optional.of(User(id = ownerId, email = "user@example.com", passwordHash = "hashed", ragEnabled = false))

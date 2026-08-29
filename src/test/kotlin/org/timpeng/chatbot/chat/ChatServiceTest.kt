@@ -137,6 +137,19 @@ class ChatServiceTest {
     }
 
     @Test
+    fun `chat lets MissingApiKeyException through unwrapped instead of a generic ChatException`() {
+        val messagesWithUser = history + userMessage("Hello")
+
+        every { conversationService.saveUserMessage(conversationId, "Hello") } returns messagesWithUser
+        every { llmProvider.generate(messagesWithUser, ownerId) } throws
+            org.timpeng.chatbot.exception.MissingApiKeyException("No Gemini API key configured for this account.")
+
+        assertThrows<org.timpeng.chatbot.exception.MissingApiKeyException> {
+            chatService.chat(conversationId, ownerId, "Hello")
+        }
+    }
+
+    @Test
     fun `chat does not save assistant message when llm provider fails`() {
         val messagesWithUser = history + userMessage("Hello")
 

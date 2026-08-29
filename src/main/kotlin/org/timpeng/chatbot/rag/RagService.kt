@@ -11,7 +11,9 @@ import org.timpeng.chatbot.rag.search.VectorSearchPort
 
 @Service
 class RagService(
-    private val embeddingProvider: EmbeddingProvider,
+    // Null when no system-wide Gemini key is configured (GenAIConfig) — RAG has no BYOK path, so
+    // this is a deployment-wide off-switch rather than something a caller can fix per-user.
+    private val embeddingProvider: EmbeddingProvider?,
     private val vectorSearchPort: VectorSearchPort,
     private val documentService: DocumentService,
     private val userRepository: UserRepository,
@@ -32,6 +34,13 @@ class RagService(
     }
 
     suspend fun buildPrompt(userQuery: String, ownerId: Long): String {
+        // RAG disabled deployment-wide (no system-wide Gemini key, see GeminiEmbeddingProvider's
+        // @ConditionalOnBean) — checked before the per-user opt-out below since it's a cheaper,
+        // more fundamental gate: no embedding capability exists at all, not just off for this user.
+        if (embeddingProvider == null) {
+            return userQuery
+        }
+
         // Per-user opt-out (users.rag_enabled, V9__add_user_rag_enabled_flag.sql), toggled via
         // PATCH /api/users/me/rag-enabled — checked first so a caller who turned RAG off never
         // pays for the checkDocument/embed/vector-search calls below. Defaults true (same as the
