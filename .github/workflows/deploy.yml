@@ -1,0 +1,43 @@
+name: Deploy backend to Cloud Run
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_ID: ai-chatbot-506909
+  REGION: us-central1
+  SERVICE: ai-chatbot-backend
+  IMAGE: us-central1-docker.pkg.dev/ai-chatbot-506909/ai-chatbot/backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/196549069718/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deploy-backend@ai-chatbot-506909.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build and push
+        run: |
+          docker build -t ${{ env.IMAGE }}:${{ github.sha }} -t ${{ env.IMAGE }}:latest .
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Deploy
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }}
