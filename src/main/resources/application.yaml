@@ -25,6 +25,15 @@ spring:
     username: ${DB_USER}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Spring Boot's own default is 10 — too small once concurrent request volume passes it,
+      # because every conversation read pays a Postgres round trip for the ownership check
+      # (ConversationService.requireOwnedConversation) regardless of whether the Redis cache
+      # itself hits. At 10, 50 concurrent requests queue on the pool and tail latency explodes
+      # independently of Redis; see docs/decision/012 for the benchmark that found this. Bounded
+      # against Postgres's own default max_connections=100, leaving headroom for psql/admin
+      # connections and any future second pool.
+      maximum-pool-size: ${DB_HIKARI_MAX_POOL_SIZE:50}
   flyway:
     # Onboards every database that already has the ddl-auto=update-era schema (see
     # docs/decision/008): Flyway just records V1 as already applied instead of running it, since
