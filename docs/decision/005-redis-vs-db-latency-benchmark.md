@@ -36,12 +36,24 @@ source scripts/load-env.sh && ./scripts/render-prometheus-config.sh
 # infra: Postgres + Redis (as usual) plus Prometheus + Grafana for this benchmark
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 
-# seed 200 conversations x 10 messages directly into Postgres — no LLM calls involved
-./scripts/seed-benchmark-data.sh 200 10
-
 # run the app from IntelliJ as usual (.env loaded), or:
 ./gradlew bootRun
+
+# seed 200 conversations x 10 messages directly into Postgres — no LLM calls involved. Must run
+# AFTER the app is up: it registers a benchmark user (bench@ai-chatbot.local) via the app's own
+# /api/auth/register and stamps every seeded conversation's owner_id to that user's id, because
+# ADR-007's ownership check 404s any conversation whose owner_id doesn't match the caller — a null
+# owner_id (pre-ADR-007 seed rows) never matches, so this isn't optional plumbing.
+./scripts/seed-benchmark-data.sh 200 10
 ```
+
+`hikari.maximum-pool-size` matters even for the "Redis" scenarios, not just the DB one — see the
+callout below the protocol table and [ADR-012](012-hikaricp-pool-sizing-for-conversation-reads.md),
+which is why it's now `50` by default (`application.yaml`, overridable via
+`DB_HIKARI_MAX_POOL_SIZE`) rather than something this protocol has to set manually.
+The k6 script logs in as the benchmark user in its `setup()` and reuses that token for every
+request; `BENCH_USER_EMAIL`/`BENCH_USER_PASSWORD` env vars let you point both scripts at a
+different account if needed (must match between seed and k6 runs).
 
 Grafana: http://localhost:3000 → dashboard **Benchmark / Redis vs DB — Conversation History Latency**
 (pre-provisioned, nothing to configure). Prometheus: http://localhost:9090.
@@ -90,6 +102,39 @@ e.g. `history_cache_time_seconds{result="hit", quantile="0.95"}`. If this ever n
 aggregated across multiple instances, switch to `publishPercentileHistogram()` in
 `ConversationHistoryService` first; single-instance local benchmarking doesn't need that.
 
+**Important:** `GET /messages` calls `ConversationService.requireOwnedConversation` (ADR-007)
+before `getHistory()` on every request — a Postgres query that runs on a cache *hit* too, and is
+not captured by `history.cache.time`. At `VUS=50` this saturates Spring Boot's default
+`hikari.maximum-pool-size=10`, which dominates tail latency independently of Redis. All runs below
+use `SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=50` for this reason — see
+[ADR-012](012-hikaricp-pool-sizing-for-conversation-reads.md) for the full story. Keep pool size
+identical across scenarios in any future re-run of this protocol; it is a shared confound, not a
+per-scenario variable.
+
+## Results (2026-09-02, local run)
+
+Seeded with `./scripts/seed-benchmark-data.sh 200 10` (200 conversations x 10 messages), `VUS=50`,
+`DURATION=2m`, `hikari.maximum-pool-size=50` for every scenario (this predates ADR-012 making 50
+the app-wide default — at the time these numbers were measured it was set explicitly per run).
+
+| Metric | A. warm (`POOL_SIZE=50`) | B. pure DB | C. blended (all 200 ids) |
+|---|---|---|---|
+| Server p50 (`history.cache.time`\* / `history.db.fallback.time`) | 3.79ms | 4.16ms | 3.53ms |
+| **Server p95** | **16.77ms** | **32.47ms** | **16.24ms** |
+| Server p99 | 35.64ms | 129.99ms | 31.45ms |
+| cache hit ratio | ~100% | 0% (disabled) | ~100% |
+| k6 `http_req_duration` p50 | 7.74ms | 8.23ms | 7.33ms |
+| **k6 `http_req_duration` p95** | **24.34ms** | **63.42ms** | **21.50ms** |
+| k6 throughput | 4561 req/s | 2541 req/s | 4973 req/s |
+| `http_req_failed` | 0% | 0% | 0% |
+
+\* `result="hit"` series; miss ratio was ~0% in both A and C once warm.
+
+**Redis reduces p95 latency by 48–50% server-side, 62–66% end-to-end**, and roughly doubles
+throughput at this concurrency. C essentially matches A rather than sitting between A and B as
+originally hypothesized — see the limitation below on why the "blended" scenario didn't exercise
+the dilution effect it was designed to measure.
+
 ## Known limitations of a local run
 
 - Postgres and Redis are both on loopback via Docker on the same machine — this is the best case
@@ -98,6 +143,16 @@ aggregated across multiple instances, switch to `publishPercentileHistogram()` i
 - The seeded table has none of the tenant's other production data/indexes/bloat, so absolute DB
   numbers won't transfer directly — treat this as a measurement of the *relative* gap, not an
   absolute SLA number.
+- The host running both the app and the load generator is not otherwise idle (IDE, browser,
+  other containers) — CPU contention from unrelated processes measurably inflated tail latency
+  during this run's earlier attempts (p95 swung from ~25ms to 100ms+ run to run with no app-level
+  change). Check `uptime`/`ps` for CPU hogs before trusting a single run's tail percentiles; prefer
+  a rerun that reproduces over a one-off number.
+- **200 conversations is too small a working set to exercise scenario C's intended "diluted hit
+  ratio" effect** — it fits entirely in Redis well within the 30 min TTL, so C measured ~100% hit
+  ratio, same as A. To actually observe the cache-dilution case the protocol was designed for,
+  reseed with an order of magnitude more conversations (e.g. 2000+) so the working set exceeds what
+  stays realistically "hot".
 
 ## Cleanup
 
